@@ -175,6 +175,8 @@ How to fix each violation type:
   - too many words: cut the least specific sentence. Never cut the concrete detail about
     the prospect, and never cut the sign-off.
   - banned phrase: rewrite that sentence in plain, direct English.
+  - client has been relabelled: the case study is a PHOTO BOOTH company. Say "photo booth
+    company" explicitly. Never describe it as being in the prospect's industry instead.
   - invented client work / invented statistic: DELETE the entire sentence containing it.
     Do not replace it with a different client or a different number. It is always better to
     say less than to claim something that did not happen.

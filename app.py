@@ -14,13 +14,14 @@ import db
 from auth import render_sign_out, require_login
 from growmated_knowledge import BRAND, PROOF_BANK
 from llm import MODEL, PROVIDER, check_dependencies, load_api_key
-from ui import inject_base_css
+from ui import inject_base_css, render_brand
 
 st.set_page_config(page_title="Growmated Engine", page_icon="⚡", layout="wide")
 inject_base_css()
 require_login()
+render_brand()
 
-st.title("⚡ Growmated Engine")
+st.title("Growmated Engine")
 st.caption(BRAND["tagline"])
 
 col_prospect, col_content = st.columns(2)

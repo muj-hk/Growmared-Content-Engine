@@ -36,7 +36,13 @@ from quality import (
     normalize_responses,
     repairable_fields,
 )
-from ui import inject_base_css, render_proof_banner, render_quality_warnings, sanitize_text
+from ui import (
+    inject_base_css,
+    render_brand,
+    render_proof_banner,
+    render_quality_warnings,
+    sanitize_text,
+)
 
 st.set_page_config(page_title="Prospecting | Growmated Engine", page_icon="🎯", layout="wide")
 inject_base_css()
@@ -66,7 +72,9 @@ MODES = {
 if "prospect_history" not in st.session_state:
     st.session_state.prospect_history = []
 
-st.title("🎯 Prospecting")
+render_brand()
+
+st.title("Prospecting")
 st.caption("Paste a raw dump. Get outreach grounded in real Growmated proof, ready to send.")
 
 # ----------------------------------------------------------------------------------------

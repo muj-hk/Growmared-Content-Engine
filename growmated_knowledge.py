@@ -55,6 +55,10 @@ SERVICES = [
 # explicit sign-off, and never invent numbers.
 PROOF_BANK = [
     {"id": "photobooth", "industry": "events",
+     # `signature` must appear verbatim in any message citing this entry. Models will
+     # otherwise keep the real numbers but relabel the client to match the prospect's
+     # industry ("one home services client we work with..."), which is fabrication.
+     "signature": "photo booth",
      "claim": "We run the lead system for another photo booth company right now, every inquiry "
               "answered in under 60 seconds automatically, first leads in the calendar within "
               "48 hours of launch."},

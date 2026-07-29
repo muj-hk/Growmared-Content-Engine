@@ -1,0 +1,14 @@
+# Brand theme, taken from growmated.com's design tokens (styles.css :root).
+#   --indigo #5254CC   primary
+#   --ink    #111827   body text
+#   --bg-2   #F7F8FC   secondary surface
+[theme]
+primaryColor = "#5254CC"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F8FC"
+textColor = "#111827"
+font = "sans serif"
+
+[server]
+# Generated post images can be a few MB; the default 200MB cap is fine but be explicit.
+maxUploadSize = 25

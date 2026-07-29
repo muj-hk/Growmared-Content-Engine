@@ -12,7 +12,7 @@ import streamlit as st
 
 import db
 from auth import require_login
-from ui import inject_base_css
+from ui import inject_base_css, render_brand
 
 st.set_page_config(page_title="Content | Growmated Engine", page_icon="📝", layout="wide")
 inject_base_css()
@@ -20,7 +20,9 @@ require_login()
 
 PLATFORM_ICONS = {"LinkedIn": "in", "Facebook": "f", "Instagram": "ig"}
 
-st.title("📝 Content")
+render_brand()
+
+st.title("Content")
 st.caption("Today's posts from the scheduled chat. Pick a platform, copy, post.")
 
 if not db.is_configured():

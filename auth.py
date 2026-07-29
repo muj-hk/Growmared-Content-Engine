@@ -37,8 +37,11 @@ def require_login() -> None:
         )
         st.stop()
 
-    st.title("🔒 Growmated Engine")
-    st.caption("Team access only.")
+    from ui import render_brand
+
+    render_brand(sidebar=False)
+    st.subheader("Team access")
+    st.caption("This tool reads and writes live client data. Sign in to continue.")
 
     with st.form("login"):
         entered = st.text_input("Password", type="password")

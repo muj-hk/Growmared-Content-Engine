@@ -140,6 +140,17 @@ def find_fabrications(fields: dict, proof_used: str | None) -> list[str]:
             problems.append(
                 f'invented client work ("{match.group(0)}") while claiming proof_used="{proof_used}"'
             )
+    else:
+        # Citing a real story is only honest if the client is described accurately. Models
+        # keep the real numbers but relabel the client to match the prospect's industry
+        # ("one home services client we work with...", citing the photo booth result).
+        entry = next(p for p in PROOF_BANK if p["id"] == proof_used)
+        signature = (entry.get("signature") or "").lower()
+        if signature and signature not in blob.lower():
+            problems.append(
+                f'cites the "{proof_used}" story but never says "{entry["signature"]}", '
+                "so the client has been relabelled"
+            )
 
     for stat in _STAT_RE.findall(blob):
         digits = re.sub(r"\D", "", stat)
