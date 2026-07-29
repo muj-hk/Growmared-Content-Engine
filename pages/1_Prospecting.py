@@ -20,6 +20,7 @@ from context_builder import (
     normalize_proof_id,
 )
 from growmated_knowledge import PROOF_BANK
+from intent import INTENTS
 import json
 
 from llm import (
@@ -140,6 +141,7 @@ if raw_input:
 
             item = {
                 "extracted": payload.get("extracted", {}) or {},
+                "routing": payload.get("routing", {}) or {},
                 "responses": responses,
                 "mode": mode["key"],
                 "raw": payload_text,
@@ -147,10 +149,14 @@ if raw_input:
                 "save_error": None,
             }
 
-            if save_to_db and db.is_configured():
+            # Nothing to file if the honest answer was "skip" - saving it would pollute the
+            # pipeline with rows nobody will ever action.
+            engage = item["routing"].get("should_engage", "yes") != "no"
+            if save_to_db and db.is_configured() and engage:
                 try:
                     item["saved_id"] = db.save_prospect(
-                        item["extracted"], item["responses"], payload_text, mode["key"], source
+                        item["extracted"], item["responses"], payload_text, mode["key"], source,
+                        intent=item["routing"].get("intent"),
                     )
                 except Exception as exc:  # surface, never silently drop the draft
                     item["save_error"] = str(exc)[:300]
@@ -192,11 +198,20 @@ if not st.session_state.prospect_history:
 
 for idx, item in enumerate(reversed(st.session_state.prospect_history)):
     ext, resp = item["extracted"], item["responses"]
+    routing = item.get("routing", {}) or {}
+    detected = routing.get("intent") or "post"
     title = ext.get("name") or "Prospect"
     company = ext.get("company")
     header = f"{title} · {company}" if company else title
+    label = INTENTS.get(detected, {}).get("label", detected)
 
-    with st.expander(f"🎯 {header}", expanded=(idx == 0)):
+    with st.expander(f"{header}  ·  {label}", expanded=(idx == 0)):
+        # Not worth engaging is a real answer, and the loudest thing on the card.
+        if routing.get("should_engage") == "no" or detected == "skip":
+            st.warning(
+                f"**Skip this one.** {routing.get('skip_reason') or 'Not a fit.'}"
+            )
+
         left, right = st.columns([3, 2])
         with left:
             st.markdown(f"**Need:** {ext.get('intent', 'N/A')}")
@@ -223,26 +238,58 @@ for idx, item in enumerate(reversed(st.session_state.prospect_history)):
         st.divider()
 
         if item["mode"] == "upwork":
+            # The bid decision comes first: whether to spend connects matters more than the copy.
+            bid = (resp.get("bid") or "").lower()
+            bid_style = {
+                "bid": ("✅", st.success),
+                "maybe": ("🟡", st.warning),
+                "skip": ("⛔", st.error),
+            }.get(bid, ("⚪", st.info))
+            icon, writer = bid_style
+            writer(f"{icon} **{bid.upper() or 'UNSCORED'}** — {resp.get('bid_reason', 'no reason given')}")
+
             fit = (resp.get("fit_score") or "unknown").lower()
-            fit_icon = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(fit, "⚪")
-            st.markdown(f"{fit_icon} **Fit: {fit}** — {resp.get('fit_reason', 'no reason given')}")
+            st.caption(f"Fit: {fit} · {resp.get('fit_reason', '')}")
+            if resp.get("red_flags"):
+                st.caption(f"⚠️ Red flags: {resp['red_flags']}")
+            if resp.get("client_risk"):
+                st.caption(f"Client's likely worry: {resp['client_risk']}")
+
             st.caption("Paste into Upwork:")
             st.code(resp.get("proposal", "N/A"), language="markdown")
-            if resp.get("opening_question"):
-                st.caption("Closing question:")
-                st.code(resp["opening_question"], language="markdown")
+            if resp.get("questions_to_ask"):
+                st.caption("Ask before quoting a number:")
+                st.code(resp["questions_to_ask"], language="markdown")
         else:
-            tab_comment, tab_dm, tab_email = st.tabs(["💬 Comment", "✉️ DM", "📧 Email"])
-            with tab_comment:
-                st.caption("Drop under their post:")
-                st.code(resp.get("comment", "N/A"), language="markdown")
-            with tab_dm:
-                st.caption("Send via Messenger / LinkedIn:")
-                st.code(resp.get("dm", "N/A"), language="markdown")
-            with tab_email:
-                if ext.get("email"):
-                    st.caption(f"Send to: **{ext['email']}**")
-                    st.text_input("Subject", value=resp.get("email_subject", ""), key=f"subj_{idx}")
-                    st.code(resp.get("email_body", "N/A"), language="markdown")
-                else:
-                    st.info("No email address found in the dump, so no cold email was drafted.")
+            # Render only what this intent produced, so nobody sends an irrelevant channel.
+            available = [
+                (name, title, caption)
+                for name, title, caption in (
+                    ("comment", "Comment", "Drop under their post:"),
+                    ("dm", "DM", "Send via Messenger / LinkedIn:"),
+                    ("answer", "Answer", "Post this as the answer. No pitch attached, by design:"),
+                    ("reply", "Reply", "The next message in this thread:"),
+                )
+                if (resp.get(name) or "").strip()
+            ]
+            has_email = bool((resp.get("email_body") or "").strip())
+            if has_email:
+                available.append(("email", "Email", None))
+
+            if not available:
+                st.info("No copy generated for this one, which is the correct output for a skip.")
+            else:
+                tabs = st.tabs([title for _, title, _ in available])
+                for tab, (name, _, caption) in zip(tabs, available):
+                    with tab:
+                        if name == "email":
+                            st.caption(f"Send to: **{ext.get('email', 'unknown')}**")
+                            st.text_input("Subject", value=resp.get("email_subject", ""), key=f"subj_{idx}")
+                            st.code(resp.get("email_body", ""), language="markdown")
+                        else:
+                            st.caption(caption)
+                            st.code(resp.get(name, ""), language="markdown")
+
+            objection = resp.get("objection_category")
+            if objection and objection != "none":
+                st.caption(f"Objection detected: **{objection}**")

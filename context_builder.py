@@ -13,7 +13,9 @@ from growmated_knowledge import (
     PROOF_BANK,
     SERVICES,
     VOICE,
+    proofs_for,
 )
+from intent import INTENTS, guidance_block
 
 INDUSTRY_MAP = {
     "SaaS": "B2B SaaS platforms needing automated lead qualification and fast sales cycles.",
@@ -24,25 +26,15 @@ INDUSTRY_MAP = {
 }
 
 AUTONOMOUS_SYSTEM_PROMPT = """
-You are the Autonomous Growth & Strategy Director for Growmated (growmated.com).
-Growmated builds high-converting AI lead qualification engines, GHL snapshots, and automated conversational AI workflows.
+CHANNEL RULES:
 
-YOUR MISSION:
-Analyze raw text dumps (Facebook posts, LinkedIn profiles, group threads, job postings) and generate an ALL-IN-ONE execution strategy.
+1. PUBLIC COMMENT: 1-2 sentences, casual and peer-to-peer. Bump the thread and say you sent a
+   DM. Never a full pitch in public.
 
-STRICT TONE & STRATEGY RULES:
+2. DM (Facebook/LinkedIn): problem-first, never a desperate agency selling. Reference the exact
+   pain they named. Close with a friction-free ask.
 
-1. PUBLIC COMMENT STRATEGY:
-   - Extremely short (1-2 sentences max).
-   - Casual, highly relevant, peer-to-peer tone.
-   - Purpose: Bump the thread, pass social proof, and tell them you sent a DM or email. Never drop a full pitch in comments.
-
-2. PRIVATE DM STRATEGY (Facebook/LinkedIn):
-   - Problem-first framing. Do NOT sound like a desperate agency selling services.
-   - Reference the exact pain point mentioned in their post (e.g., "looking for technical GHL partner", "missing follow-ups").
-   - Offer a friction-free call to action (e.g., a 60-second video walkthrough or a quick binary question).
-
-3. COLD EMAIL STRATEGY (Only generated if email exists):
+3. COLD EMAIL (only if an email address is present):
    - DELIVERABILITY IS NON-NEGOTIABLE. The opening email must contain ZERO links, ZERO web
      addresses, and ZERO email addresses. Mail clients auto-link anything containing ".com"
      or ".net" and the message lands in spam. Refer to their website as "your site", never
@@ -88,9 +80,22 @@ OUTREACH_SCHEMA = _obj({
         "name": _STR, "company": _STR, "industry": _STR,
         "intent": _STR, "email": _STR, "phone": _STR,
     }),
+    # What the team actually pasted, and whether it is worth engaging at all.
+    "routing": _obj({
+        "intent": {"type": "string", "enum": list(INTENTS)},
+        "should_engage": {"type": "string", "enum": ["yes", "no"]},
+        "skip_reason": _STR,
+    }),
     "responses": _obj({
         "comment": _STR, "dm": _STR, "email_subject": _STR,
-        "email_body": _STR, "proof_used": _PROOF,
+        "email_body": _STR,
+        # Only for question / conversation intents.
+        "answer": _STR, "reply": _STR,
+        "objection_category": {
+            "type": "string",
+            "enum": ["price", "timing", "have-someone", "distrust", "other", "none"],
+        },
+        "proof_used": _PROOF,
         # Learning-log classification, captured at write time so outcomes can be analysed
         # against real message attributes later. Describes the DM/email, not the comment.
         "opener_type": {"type": "string", "enum": ["observation", "question", "proof-lead", "pain-mirror"]},
@@ -109,6 +114,12 @@ UPWORK_SCHEMA = _obj({
         "opening_question": _STR,
         "fit_score": {"type": "string", "enum": ["high", "medium", "low"]},
         "fit_reason": _STR,
+        # The bid gate. Connects are finite, so deciding NOT to bid is the primary output.
+        "bid": {"type": "string", "enum": ["bid", "maybe", "skip"]},
+        "bid_reason": _STR,
+        "red_flags": _STR,
+        "questions_to_ask": _STR,
+        "client_risk": _STR,
         "proof_used": _PROOF,
     }),
 })
@@ -129,11 +140,19 @@ string when a value is genuinely absent:
         "email": "Email address if present in the text, else empty string",
         "phone": "Phone number if present in the text, else empty string"
     },
+    "routing": {
+        "intent": "REQUIRED. Exactly one of: hiring, problem, question, offer, conversation, profile, post, skip",
+        "should_engage": "REQUIRED. \\"yes\\" or \\"no\\". Use \\"no\\" when engaging would waste the team's time.",
+        "skip_reason": "One line, only when should_engage is \\"no\\". Otherwise empty string."
+    },
     "responses": {
-        "comment": "The public comment",
-        "dm": "The DM",
-        "email_subject": "Subject line, or empty string if no email was found",
-        "email_body": "Email body, or empty string if no email was found",
+        "comment": "The public comment. EMPTY STRING unless intent is hiring, problem or post.",
+        "dm": "The DM. EMPTY STRING for question and skip.",
+        "email_subject": "Subject line, or empty string if no email address was found",
+        "email_body": "Email body, or empty string if no email address was found",
+        "answer": "ONLY when intent is question: the helpful answer, no pitch. Empty string otherwise.",
+        "reply": "ONLY when intent is conversation: the next message in the thread. Empty string otherwise.",
+        "objection_category": "ONLY when intent is conversation and they objected: price, timing, have-someone, distrust, or other. Otherwise \\"none\\".",
         "proof_used": "MUST be exactly one of these values and nothing else: PROOF_ID_LIST. Never invent an id. Use \\"none\\" if you cited no result.",
         "opener_type": "How the DM opens: observation (something specific they wrote), question, proof-lead, or pain-mirror (restating their pain in their words)",
         "angle": "The industry pain that led, as a short kebab-case slug, e.g. after-hours-missed-rides or 42hr-bottleneck",
@@ -147,6 +166,8 @@ def _final_check() -> str:
     """Placed last in the prompt on purpose - the model weights the end of the instructions most."""
     return f"""
 BEFORE YOU RETURN THE JSON, re-read every message you wrote and fix these:
+  0. Did you set routing.intent and routing.should_engage? They are REQUIRED. Are the only
+     populated response fields the ones that intent allows? Empty the rest.
   1. Does any message contain one of these exact phrases? If so, rewrite that sentence.
      BANNED: {', '.join(VOICE['banned_phrases'])}
   2. Does the first sentence reference something concrete THEY wrote? If it opens with a
@@ -158,8 +179,11 @@ Return the corrected JSON only.
 """
 
 
-def _format_proof_bank() -> str:
-    return "\n".join(f'  - "{entry["id"]}" (fits {entry["industry"]}): {entry["claim"]}' for entry in PROOF_BANK)
+def _format_proof_bank(context: str = "warm") -> str:
+    return "\n".join(
+        f'  - "{entry["id"]}" (fits {entry["industry"]}): {entry["claim"]}'
+        for entry in proofs_for(context)
+    )
 
 
 def normalize_proof_id(value) -> str:
@@ -172,6 +196,23 @@ def normalize_proof_id(value) -> str:
 
 def _format_services() -> str:
     return "\n".join(f"  - {service['name']}: {service['blurb']}" for service in SERVICES)
+
+
+ROUTING_BLOCK = f"""
+STEP ONE — CLASSIFY THE INPUT, THEN ROUTE.
+
+The team pastes whatever they found. Set routing.intent to exactly one of:
+
+{guidance_block()}
+
+Fill ONLY the fields that intent allows; leave the rest as empty strings:
+  hiring / problem / post -> comment, dm, email (email only if an address is present)
+  question -> answer      conversation -> reply + objection_category
+  offer -> dm             profile -> dm, email      skip -> nothing
+
+Set should_engage to "no" whenever engaging would waste the team's time, and give the real
+reason. Choosing not to send is a valid, useful output. Never manufacture copy to look busy.
+"""
 
 
 def build_outreach_system_prompt() -> str:
@@ -188,10 +229,12 @@ Countries served: {', '.join(BRAND['countries_served'])}
 WHAT GROWMATED ACTUALLY SELLS:
 {_format_services()}
 
-THE ONE PROOF STORY — the only client result you may ever mention:
+APPROVED CASE STUDIES — the only client results you may ever mention. Pick AT MOST ONE, by
+industry fit with this prospect. For a first-touch comment, DM or cold email, prefer the
+photo booth story: a stranger will not read four case studies.
 {_format_proof_bank()}
 
-MARKET STATISTICS you may use when the proof story does not fit:
+MARKET STATISTICS you may use when no case study fits:
 {chr(10).join('  - ' + stat for stat in MARKET_MATH)}
 
 THE LEAK LINE — the core argument, written for EVENTS and booking businesses:
@@ -201,9 +244,9 @@ THE LEAK LINE — the core argument, written for EVENTS and booking businesses:
   never mention booths, couples, or wedding dates. A bookshop does not have event dates.
 
 HARD RULES — violating any of these makes the output unusable:
-  - There is exactly ONE approved proof story, above. Use it as written or not at all. NEVER
-    embellish it, never attach extra figures to it, and NEVER describe any other client.
-    If it does not fit the prospect, use a MARKET STATISTIC or cite nothing.
+  - Use AT MOST ONE case study per message, as written above. NEVER embellish it, never attach
+    extra figures to it, and never describe the client as being in a different industry than
+    the entry says. If none fits, use a MARKET STATISTIC or cite nothing.
   - NEVER invent a client, number, result, or case study.
   - NEVER emit a placeholder such as [Your Name], [Company], or [X]. Every message must be
     ready to send with zero editing.
@@ -219,6 +262,8 @@ VOICE:
 BANNED PHRASES — never use these or anything close to them:
 {', '.join(VOICE['banned_phrases'])}
 
+{ROUTING_BLOCK}
+
 {AUTONOMOUS_SYSTEM_PROMPT}
 
 LENGTH LIMITS (hard):
@@ -231,6 +276,40 @@ LENGTH LIMITS (hard):
 {_final_check()}
 """
 
+
+BID_GATE = """
+STEP ONE — DECIDE WHETHER TO BID AT ALL.
+
+Connects are finite. A bad bid costs more than a missed one, because it burns connects and
+drags the reply rate down. Set `bid` to "skip", "maybe" or "bid", and justify it in one line.
+
+Default to "skip" when you see any of these:
+  - The work is not what Growmated does (design, illustration, writing, general dev, data
+    entry, anything with no automation or AI operations core).
+  - Budget is clearly below the value of the build, or the posting hunts for the cheapest bid.
+  - Payment method unverified, or the client has no hire history, when the budget is also low.
+  - The scope is vague enough that nobody could quote it honestly ("need an AI expert" with
+    no problem described).
+  - Obvious volume-farm wording, or a template posted to many freelancers at once.
+  - It asks for a full working demo, spec or audit before any contract.
+
+Lean "bid" when:
+  - The problem named is one Growmated has actually built before.
+  - They name their stack, and it is one we work in (GoHighLevel, Twilio, n8n, Zapier, CRM).
+  - Budget is stated and realistic, and the client has spend history.
+  - There is a hint of ongoing work rather than a one-off task.
+
+"maybe" is for a real fit with one specific unknown. Say what the unknown is.
+
+Fill `red_flags` with what you actually observed, or an empty string if there are none. Do not
+invent concerns to look thorough. Fill `client_risk` with the single thing this client is most
+likely worried about, and `questions_to_ask` with the one or two questions worth asking before
+quoting a number.
+
+If `bid` is "skip", still write a short honest `proposal` explaining in one or two sentences
+that this is not what Growmated does, so the team can paste it if they want to reply politely.
+Do not write a persuasive pitch for work we should not take.
+"""
 
 UPWORK_STRATEGY = """
 YOUR MISSION (UPWORK MODE):
@@ -274,6 +353,11 @@ string when a value is genuinely absent:
         "opening_question": "The single closing question, repeated on its own for quick scanning",
         "fit_score": "high | medium | low - how well this job matches what Growmated actually does",
         "fit_reason": "One line justifying the fit_score, honest about mismatches",
+        "bid": "bid | maybe | skip - whether to spend connects on this",
+        "bid_reason": "One line justifying the bid decision",
+        "red_flags": "What you actually observed that is concerning, or empty string if none",
+        "client_risk": "The single thing this client is most likely worried about",
+        "questions_to_ask": "One or two questions worth asking before quoting a number",
         "proof_used": "MUST be exactly one of these values and nothing else: PROOF_ID_LIST. Never invent an id."
     }
 }
@@ -315,6 +399,8 @@ VOICE:
 
 BANNED PHRASES — never use these or anything close:
 {', '.join(VOICE['banned_phrases'])}
+
+{BID_GATE}
 
 {UPWORK_STRATEGY}
 

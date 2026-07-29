@@ -62,6 +62,8 @@ CHANNEL_LABELS = {
     "dm": "Facebook DM",
     "email": "Email",
     "proposal": "Upwork Proposal",
+    "answer": "Public Answer",
+    "reply": "Thread Reply",
 }
 
 
@@ -101,7 +103,8 @@ def _label_for(extracted: dict, raw_input: str) -> str:
     return (fallback[:100] or "Unknown")
 
 
-def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str, source: str = "manual") -> str:
+def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
+                  source: str = "manual", intent: str | None = None) -> str:
     """Insert one pipeline row plus one outreach_log row per generated message. Returns pipeline id."""
     client = get_client()
 
@@ -119,6 +122,7 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str, s
     pipeline_id = inserted.data[0]["id"]
 
     # One row per channel actually produced, so the log mirrors what the team can send.
+    # Intent routing means some of these are legitimately empty and get filtered below.
     if mode == "upwork":
         channels = [("proposal", responses.get("proposal"))]
     else:
@@ -126,6 +130,8 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str, s
             ("comment", responses.get("comment")),
             ("dm", responses.get("dm")),
             ("email", responses.get("email_body")),
+            ("answer", responses.get("answer")),
+            ("reply", responses.get("reply")),
         ]
 
     # Learning-log fields, captured at draft time per the OUTREACH LEARNING LOG spec.
@@ -144,6 +150,11 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str, s
             "proof_used": responses.get("proof_used") or None,
             "word_count": len(str(content).split()),
             "touch_number": 1,
+            "template_id": intent or None,  # what the input was classified as
+            "objection_category": (
+                responses.get("objection_category")
+                if responses.get("objection_category") not in (None, "", "none") else None
+            ),
         }
         for key, content in channels
         if content and str(content).strip()

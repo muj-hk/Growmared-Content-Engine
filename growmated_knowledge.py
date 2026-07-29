@@ -50,34 +50,45 @@ SERVICES = [
      "blurb": "We help agencies run their systems: sub-account builds, A2P, deliverability."},
 ]
 
-# PER THE HANDOFF DOC: there is exactly ONE approved proof story, used verbatim, never
-# embellished. Wording below is the founder-approved phrasing. Do not add entries here without
-# explicit sign-off, and never invent numbers.
+# Wording is grounded in Growmated-Capabilities-and-Case-Studies.pdf, which is client-facing
+# and publishes all four with their numbers. Client names stay withheld, exactly as the PDF
+# does it. Never invent numbers, and never add an entry without explicit sign-off.
+#
+# `signature` must appear verbatim in any message citing the entry. Without it, models keep
+# the real numbers but relabel the client to match the prospect's industry ("one home services
+# client we work with...", citing the photo booth result), which is fabrication.
 PROOF_BANK = [
-    {"id": "photobooth", "industry": "events",
-     # `signature` must appear verbatim in any message citing this entry. Models will
-     # otherwise keep the real numbers but relabel the client to match the prospect's
-     # industry ("one home services client we work with..."), which is fabrication.
-     "signature": "photo booth",
+    {"id": "photobooth", "industry": "events", "signature": "photo booth",
      "claim": "We run the lead system for another photo booth company right now, every inquiry "
               "answered in under 60 seconds automatically, first leads in the calendar within "
               "48 hours of launch."},
+    {"id": "chauffeur", "industry": "transportation", "signature": "chauffeur",
+     "claim": "We built the booking system for a US chauffeur company: it answers calls and "
+              "texts at any hour, collects the trip details, calculates the exact fare per "
+              "vehicle, takes the deposit, raises the invoice, books the trip and notifies the "
+              "driver, with no staff involved."},
+    {"id": "consulting", "industry": "consulting", "signature": "consulting firm",
+     "claim": "For a Canadian consulting firm we built AI voice and SMS qualification across "
+              "multiple provinces: around 1,000 leads contacted, around 271 real "
+              "conversations, 23 booked consultations."},
+    {"id": "agency_scale", "industry": "agencies", "signature": "agency",
+     "claim": "We run the systems behind a US marketing agency: 50+ sub-accounts built and "
+              "managed, 100+ accounts taken through A2P registration, and deliverability "
+              "owned across high-volume messaging."},
 ]
 
-# QUARANTINED. These were previously injected into prompts and the tool cited their specific
-# numbers to prospects. The handoff doc says one proof story only and "invent no numbers", so
-# they are held here and deliberately NOT referenced by any prompt. If the founder confirms any
-# of them are real and sendable, move it back into PROOF_BANK.
-UNVERIFIED_CLAIMS = [
-    {"id": "chauffeur", "industry": "transportation",
-     "claim": "Built an AI booking system for a US chauffeur company: answers calls/texts any hour, quotes the exact fare per vehicle, takes the deposit, books, and notifies the driver, zero staff involvement."},
-    {"id": "consulting", "industry": "consulting",
-     "claim": "AI voice+SMS qualification for a Canadian consulting firm: ~1,000 dials -> ~271 real conversations -> 23 booked consultations."},
-    {"id": "accounting", "industry": "professional_services",
-     "claim": "Automated a US accounting firm's operations: 15 workflows, response time from ~42 hours to under 1 minute."},
-    {"id": "agency_scale", "industry": "agencies",
-     "claim": "We help agencies run their systems: 50+ sub-accounts managed, 100+ accounts taken through A2P registration, high-volume SMS daily."},
-]
+# Cold first-touch (public comment, first DM, cold email) stays on ONE story, per the handoff
+# doc: brevity and deliverability matter more than breadth, and a stranger has no reason to
+# read four case studies. Warm contexts (Upwork proposals, replies in a live thread, anything
+# sent alongside the capabilities PDF) may use the whole bank, matched by industry.
+COLD_PROOF_IDS = ["photobooth"]
+
+
+def proofs_for(context: str = "warm") -> list[dict]:
+    """Proof entries allowed in a given context. context is "cold" or "warm"."""
+    if context == "cold":
+        return [p for p in PROOF_BANK if p["id"] in COLD_PROOF_IDS]
+    return PROOF_BANK
 
 MARKET_MATH = [
     "~78% of buyers choose the first business that responds.",
