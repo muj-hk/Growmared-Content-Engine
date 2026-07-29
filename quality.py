@@ -33,22 +33,17 @@ WORD_LIMITS = {
 
 SUBJECT_WORD_LIMIT = 8
 
-# Distinctive fragments of the quarantined client stories in growmated_knowledge.UNVERIFIED_CLAIMS.
-# Only the one approved proof story may be told, so these must never reach a prospect.
-# Deliberately specific: bare words like "accounting" or "chauffeur" appear legitimately when
-# the prospect is in that industry, and "A2P registration" is a skill, not a client result.
+# Client results that are NOT in the capabilities PDF and therefore must never reach a
+# prospect. The four PDF case studies are all in PROOF_BANK now, so this list covers only the
+# accounting-firm figures, which appear nowhere published.
+#
+# Deliberately narrow. Earlier this list also blocked "sub-accounts" and "consulting firm",
+# which became false positives the moment those case studies were approved. Anything here must
+# be distinctive enough that it cannot show up in legitimate copy: bare words like "accounting"
+# appear naturally when the prospect IS an accountant, and "42 hours" collides with the
+# MARKET_MATH line about median reply time.
 QUARANTINED_MARKERS = [
-    "accounting firm",
-    "consulting firm",
-    "1,000 dials",
-    "1000 dials",
-    "271",
-    "23 booked",
     "15 workflows",
-    "42 hours",
-    "sub-accounts",
-    "sub accounts",
-    "100+ accounts",
 ]
 
 

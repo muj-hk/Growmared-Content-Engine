@@ -7,9 +7,13 @@ Run: python test_intent.py
 import json
 import sys
 
-from context_builder import OUTREACH_SCHEMA, build_outreach_system_prompt, normalize_proof_id
-from intent import fields_for
-from llm import MODEL, build_client, generate_json
+from context_builder import (
+    OUTREACH_RESPONSES_SCHEMA,
+    OUTREACH_SCHEMA,
+    build_outreach_system_prompt,
+    normalize_proof_id,
+)
+from llm import MODEL, build_client, generate_json, repair_copy
 from quality import find_fabrications, find_violations, normalize_responses, repairable_fields
 
 FIXTURES = [
@@ -86,6 +90,16 @@ def main() -> int:
 
         routing = payload.get("routing", {}) or {}
         responses = normalize_responses(payload.get("responses", {}) or {})
+
+        # Mirror the app exactly: normalize, then repair anything that broke house style.
+        # Checking raw output would fail on word limits the app silently fixes.
+        pre = repairable_fields(responses)
+        pre_problems = find_violations(pre) + find_fabrications(
+            pre, normalize_proof_id(responses.get("proof_used"))
+        )
+        if pre_problems:
+            print(f"  repairing: {len(pre_problems)} -> {pre_problems}")
+            responses = repair_copy(client, responses, pre_problems, OUTREACH_RESPONSES_SCHEMA)
         detected = routing.get("intent")
         engage = routing.get("should_engage")
         produced = [k for k in ("comment", "dm", "email_body", "answer", "reply") if (responses.get(k) or "").strip()]

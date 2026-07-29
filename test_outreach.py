@@ -23,7 +23,8 @@ from context_builder import (
     normalize_proof_id,
 )
 from growmated_knowledge import PROOF_BANK, VOICE
-from llm import MODEL, build_client, generate_json, repair_copy
+from intent import fields_for
+from llm import MODEL, build_client, generate_json, repair_until_clean
 from quality import (
     find_fabrications,
     find_violations,
@@ -86,13 +87,17 @@ def check(bundle, fixture):
     if proof not in VALID_PROOF_IDS:
         failures.append(f"proof_used={proof!r} is not approved (only the one proof story is allowed)")
 
-    # Email is drafted only when an address actually exists.
-    if fixture["expect_email"]:
+    # Email is drafted only when an address exists AND the routed intent allows an email.
+    # A "question" correctly produces an answer and nothing else, even with an address present.
+    intent = (bundle.get("routing", {}) or {}).get("intent", "post")
+    email_allowed = "email" in fields_for(intent)
+
+    if fixture["expect_email"] and email_allowed:
         if not extracted.get("email"):
             failures.append("expected an email address to be extracted, got none")
         elif not email_body.strip():
             failures.append("email address was found but email_body is empty")
-    elif email_body.strip():
+    elif email_body.strip() and not fixture["expect_email"]:
         failures.append("no email address in source, but an email body was still drafted")
 
     return failures
@@ -147,16 +152,14 @@ def check_upwork(bundle, fixture):
 
 
 def apply_repair(client, responses, schema):
-    """Mirror the app: normalize typography, then repair remaining violations."""
-    responses = normalize_responses(responses)
-    fields = repairable_fields(responses)
-    violations = find_violations(fields) + find_fabrications(
-        fields, normalize_proof_id(responses.get("proof_used"))
+    """Mirror the app exactly: normalize typography, then repair until clean."""
+    before = repairable_fields(normalize_responses(responses))
+    problems = find_violations(before) + find_fabrications(
+        before, normalize_proof_id(responses.get("proof_used"))
     )
-    if violations:
-        print(f"  repairing  : {len(violations)} violation(s) -> {violations}")
-        return repair_copy(client, responses, violations, schema)
-    return responses
+    if problems:
+        print(f"  repairing  : {len(problems)} violation(s) -> {problems}")
+    return repair_until_clean(client, responses, schema)
 
 
 def main():

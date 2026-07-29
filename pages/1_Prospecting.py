@@ -30,7 +30,7 @@ from llm import (
     MissingKeyError,
     build_client,
     generate_json,
-    repair_copy,
+    repair_until_clean,
 )
 from quality import (
     find_fabrications,
@@ -131,12 +131,7 @@ if raw_input:
 
             # The prompt asks for house style, but common phrasing slips through. Repair it
             # rather than shipping copy the team has to hand-edit every time.
-            fields = repairable_fields(responses)
-            violations = find_violations(fields) + find_fabrications(
-                fields, normalize_proof_id(responses.get("proof_used"))
-            )
-            if violations:
-                responses = repair_copy(client, responses, violations, mode["repair_schema"])
+            responses = repair_until_clean(client, responses, mode["repair_schema"])
 
             st.session_state.last_latency = elapsed
 

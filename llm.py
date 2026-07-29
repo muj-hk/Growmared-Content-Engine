@@ -172,8 +172,9 @@ How to fix each violation type:
     with another contact route. The call to action becomes a plain request to reply, such as
     "Just reply and I will send a couple of times that work." Refer to their website as
     "your site", never by its address.
-  - too many words: cut the least specific sentence. Never cut the concrete detail about
-    the prospect, and never cut the sign-off.
+  - too many words: you MUST get under the stated limit, not merely closer to it. Delete whole
+    sentences rather than trimming words. Count them. Never cut the concrete detail about the
+    prospect, and never cut the sign-off or the postscript.
   - banned phrase: rewrite that sentence in plain, direct English.
   - client has been relabelled: the case study is a PHOTO BOOTH company. Say "photo booth
     company" explicitly. Never describe it as being in the prospect's industry instead.
@@ -185,6 +186,42 @@ How to fix each violation type:
     then "Growmated" on its own line, then a blank line, then the "P.S." line if present.
 
 Return the corrected JSON object with exactly the same keys as the input, and nothing else."""
+
+
+def repair_until_clean(client, responses: dict, schema: dict, max_passes: int = 2) -> dict:
+    """Normalize, then repair repeatedly until the copy is clean or we stop making progress.
+
+    One pass is not always enough: a 148-word email came back at 123 against a 110 limit,
+    because the model trims rather than cuts. Bounded at max_passes so a stubborn violation
+    cannot loop forever, and stops early if a pass fixes nothing.
+
+    quality is imported here rather than at module scope to keep llm.py importable from
+    scripts that do not need the guard layer.
+    """
+    from quality import find_fabrications, find_violations, normalize_responses, repairable_fields
+
+    from context_builder import normalize_proof_id
+
+    current = normalize_responses(responses)
+    for _ in range(max_passes):
+        fields = repairable_fields(current)
+        problems = find_violations(fields) + find_fabrications(
+            fields, normalize_proof_id(current.get("proof_used"))
+        )
+        if not problems:
+            return current
+
+        repaired = normalize_responses(repair_copy(client, current, problems, schema))
+        repaired_fields = repairable_fields(repaired)
+        remaining = find_violations(repaired_fields) + find_fabrications(
+            repaired_fields, normalize_proof_id(repaired.get("proof_used"))
+        )
+        # No improvement means another identical pass will not help either.
+        if len(remaining) >= len(problems):
+            return repaired
+        current = repaired
+
+    return current
 
 
 def repair_copy(client, responses: dict, violations: list[str], schema: dict,
