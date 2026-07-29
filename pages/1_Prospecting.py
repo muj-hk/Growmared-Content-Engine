@@ -24,6 +24,7 @@ from intent import INTENTS
 import json
 
 from llm import (
+    PROVIDER,
     SPEED_MODES,
     MissingDependencyError,
     MissingKeyError,
@@ -174,7 +175,17 @@ if raw_input:
             )
         except Exception as exc:
             name = type(exc).__name__
-            if "Timeout" in name:
+            status = getattr(exc, "status_code", None)
+            if "InternalServer" in name or "ServiceUnavailable" in name or (status or 0) >= 500:
+                st.error(
+                    f"**The {PROVIDER} endpoint is returning server errors.** Nothing is wrong "
+                    "with your input; the provider is having problems. Wait a few minutes and "
+                    "retry. If it persists, set `GROWMATED_PROVIDER=claude` in the app's "
+                    "secrets to switch provider."
+                )
+            elif "RateLimit" in name:
+                st.error("**Rate limited by the provider.** Wait a moment and try again.")
+            elif "Timeout" in name:
                 st.error(
                     "**The model took too long and the request timed out.** The endpoint is "
                     "busy. Try again, or switch to Fast in the sidebar."
