@@ -13,7 +13,7 @@ import streamlit as st
 import db
 from auth import render_sign_out, require_login
 from growmated_knowledge import BRAND, PROOF_BANK
-from llm import MODEL, PROVIDER, load_api_key
+from llm import MODEL, PROVIDER, check_dependencies, load_api_key
 from ui import inject_base_css
 
 st.set_page_config(page_title="Growmated Engine", page_icon="⚡", layout="wide")
@@ -59,6 +59,11 @@ c3.metric("Proof entries", len(PROOF_BANK))
 
 if not key_ok:
     st.error(f"{KEY_NAME} is missing. Add it to .env or the app's secrets.")
+
+# A missing SDK should surface here on load, not as a traceback mid-generation.
+dependency_problem = check_dependencies()
+if dependency_problem:
+    st.error(f"**Dependency missing.** {dependency_problem}")
 
 if db_ok:
     try:

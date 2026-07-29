@@ -45,6 +45,27 @@ class MissingKeyError(RuntimeError):
     """No credentials configured, so the UI can show setup help instead of a traceback."""
 
 
+class MissingDependencyError(RuntimeError):
+    """The provider's SDK is not installed. Almost always a requirements.txt omission."""
+
+
+def check_dependencies() -> str | None:
+    """Return a human-readable problem, or None if the active provider can actually run.
+
+    Called by the home page health check so a missing package shows up as a clear setup
+    error on load, rather than as a ModuleNotFoundError halfway through a generation.
+    """
+    package = "anthropic" if PROVIDER == "claude" else "openai"
+    try:
+        __import__(package)
+    except ImportError:
+        return (
+            f"The `{package}` package is not installed, which provider "
+            f"`{PROVIDER}` needs. Add it to requirements.txt and redeploy."
+        )
+    return None
+
+
 class RefusedError(RuntimeError):
     """The model declined the request."""
 
@@ -55,6 +76,10 @@ def load_api_key(name: str) -> str:
 
 
 def build_client():
+    problem = check_dependencies()
+    if problem:
+        raise MissingDependencyError(problem)
+
     if PROVIDER == "claude":
         import anthropic
 

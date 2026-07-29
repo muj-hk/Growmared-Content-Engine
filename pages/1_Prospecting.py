@@ -20,7 +20,16 @@ from context_builder import (
     normalize_proof_id,
 )
 from growmated_knowledge import PROOF_BANK
-from llm import SPEED_MODES, MissingKeyError, build_client, generate_json, repair_copy
+import json
+
+from llm import (
+    SPEED_MODES,
+    MissingDependencyError,
+    MissingKeyError,
+    build_client,
+    generate_json,
+    repair_copy,
+)
 from quality import (
     find_fabrications,
     find_violations,
@@ -141,10 +150,31 @@ if raw_input:
             st.session_state.prospect_history.append(item)
             st.rerun()
 
-        except MissingKeyError as exc:
+        except (MissingKeyError, MissingDependencyError) as exc:
             st.error(f"**Setup needed.** {exc}")
+        except json.JSONDecodeError:
+            st.error(
+                "**The model returned something that was not valid JSON.** This is usually "
+                "transient. Try again, and if it keeps happening switch the model in the "
+                "sidebar."
+            )
         except Exception as exc:
-            st.error(f"**Generation failed.** {type(exc).__name__}: {str(exc)[:400]}")
+            name = type(exc).__name__
+            if "Timeout" in name:
+                st.error(
+                    "**The model took too long and the request timed out.** The endpoint is "
+                    "busy. Try again, or switch to Fast in the sidebar."
+                )
+            elif "Connection" in name or "APIConnection" in name:
+                st.error(
+                    "**Could not reach the model endpoint.** Check the connection and try again."
+                )
+            elif "Authentication" in name or "PermissionDenied" in name:
+                st.error(
+                    "**The API key was rejected.** Check the provider key in the app's secrets."
+                )
+            else:
+                st.error(f"**Generation failed.** {name}: {str(exc)[:400]}")
 
 # ----------------------------------------------------------------------------------------
 # Results
