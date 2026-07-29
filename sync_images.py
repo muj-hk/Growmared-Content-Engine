@@ -9,13 +9,17 @@ Usage:
     python sync_images.py "C:\\path\\to\\images"          # dry run, shows the plan
     python sync_images.py "C:\\path\\to\\images" --apply  # actually upload
 
-Matching, in order:
-  1. A date in the filename (2026-07-29, 20260729, 29-07-2026) matches the post with that
-     scheduled_date.
-  2. Anything left over is paired oldest-file to oldest-post, for posts still missing an
-     image.
+Filenames carry both the date and the platform, which is exactly what the tool needs:
 
-Posts that already have an image are never touched, so re-running is safe.
+    2026-07-29-linkedin.png   -> the LinkedIn variant of the 2026-07-29 post
+    2026-07-29-facebook.png   -> the Facebook variant of the same post
+    2026-07-29.png            -> used for every platform that has no specific image
+
+The image is stored against that platform's variant, next to its copy and tags, because the
+team posts one platform at a time.
+
+Images whose date has no matching post are reported and skipped. Variants that already have
+an image are left alone, so re-running is safe.
 """
 
 import argparse
@@ -55,6 +59,27 @@ def date_from_name(name: str) -> date | None:
     return None
 
 
+# Canonical platform names as stored in variants, keyed by what appears in filenames.
+PLATFORM_ALIASES = {
+    "linkedin": "LinkedIn",
+    "li": "LinkedIn",
+    "facebook": "Facebook",
+    "fb": "Facebook",
+    "instagram": "Instagram",
+    "ig": "Instagram",
+    "insta": "Instagram",
+}
+
+
+def platform_from_name(name: str) -> str | None:
+    """Pull the platform out of e.g. 2026-07-29-b-linkedin.png. None means 'all platforms'."""
+    stem = Path(name).stem.lower()
+    for alias, canonical in PLATFORM_ALIASES.items():
+        if re.search(rf"(^|[-_]){re.escape(alias)}([-_]|$)", stem):
+            return canonical
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Attach a folder of images to Content posts.")
     parser.add_argument("folder", help="Folder containing the post images")
@@ -79,44 +104,49 @@ def main() -> int:
         return 0
 
     posts = db.list_content(limit=200, include_archived=False)
-    needy = [p for p in posts if not (p.get("image_url") or "").strip()]
-    needy.sort(key=lambda p: p.get("scheduled_date") or p.get("created_at") or "")
+    by_date = {p["scheduled_date"]: p for p in posts if p.get("scheduled_date")}
 
-    print(f"{len(images)} image(s) in folder, {len(needy)} post(s) missing an image.\n")
-    if not needy:
-        print("Every post already has an image. Nothing to do.")
-        return 0
+    print(f"{len(images)} image(s) in folder, {len(posts)} post(s) in the calendar.\n")
 
-    by_date = {}
-    for post in needy:
-        if post.get("scheduled_date"):
-            by_date.setdefault(post["scheduled_date"], post)
-
-    plan: list[tuple[Path, dict, str]] = []
-    claimed_posts: set[str] = set()
-    leftovers: list[Path] = []
+    plan: list[tuple[Path, dict, list[str]]] = []
+    no_post: list[Path] = []
+    already: list[str] = []
 
     for image in images:
         found = date_from_name(image.name)
         post = by_date.get(found.isoformat()) if found else None
-        if post and post["id"] not in claimed_posts:
-            claimed_posts.add(post["id"])
-            plan.append((image, post, "date in filename"))
-        else:
-            leftovers.append(image)
+        if not post:
+            no_post.append(image)
+            continue
 
-    remaining = [p for p in needy if p["id"] not in claimed_posts]
-    for image, post in zip(leftovers, remaining):
-        claimed_posts.add(post["id"])
-        plan.append((image, post, "oldest-first pairing"))
+        variants = db.get_variants(post)
+        platform = platform_from_name(image.name)
+        # A file with no platform in its name applies to every platform on that post.
+        targets = [platform] if platform else list(variants)
+        targets = [t for t in targets if t]
 
-    unmatched = leftovers[len(remaining):] if len(leftovers) > len(remaining) else []
+        pending = [t for t in targets if not ((variants.get(t) or {}).get("image") or "").strip()]
+        for skipped in [t for t in targets if t not in pending]:
+            already.append(f"{image.name} -> {skipped} (already has an image)")
 
-    for image, post, why in plan:
+        if pending:
+            plan.append((image, post, pending))
+
+    for image, post, targets in plan:
         print(f"  {image.name}")
-        print(f"    -> {post.get('title') or '(untitled)'}  [{post.get('scheduled_date')}]  ({why})")
-    for image in unmatched:
-        print(f"  {image.name}\n    -> SKIPPED, no post left needing an image")
+        print(f"    -> {post.get('title') or '(untitled)'} [{post.get('scheduled_date')}] :: {', '.join(targets)}")
+    for line in already:
+        print(f"  {line}")
+    if no_post:
+        print(f"\n  {len(no_post)} image(s) skipped, no post in the calendar for that date:")
+        for image in no_post[:10]:
+            print(f"    {image.name}")
+        if len(no_post) > 10:
+            print(f"    ... and {len(no_post) - 10} more")
+
+    if not plan:
+        print("\nNothing to attach.")
+        return 0
 
     if not args.apply:
         print(f"\nDry run. Re-run with --apply to upload {len(plan)} image(s).")
@@ -124,19 +154,20 @@ def main() -> int:
 
     print()
     failures = 0
-    for image, post, _ in plan:
-        try:
-            url = db.upload_content_image(
-                post["id"], image.name, image.read_bytes(),
-                MIME.get(image.suffix.lower(), "image/png"),
-            )
-            db.update_content(post["id"], image_url=url)
-            print(f"  attached {image.name} -> {post.get('title')}")
-        except Exception as exc:
-            failures += 1
-            print(f"  FAILED {image.name}: {type(exc).__name__}: {str(exc)[:160]}")
+    for image, post, targets in plan:
+        for platform in targets:
+            try:
+                url = db.upload_content_image(
+                    post["id"], image.name, image.read_bytes(),
+                    MIME.get(image.suffix.lower(), "image/png"), platform=platform,
+                )
+                db.set_variant_image(post["id"], platform, url)
+                print(f"  attached {image.name} -> {post.get('title')} :: {platform}")
+            except Exception as exc:
+                failures += 1
+                print(f"  FAILED {image.name} ({platform}): {type(exc).__name__}: {str(exc)[:160]}")
 
-    print(f"\n{len(plan) - failures} attached, {failures} failed.")
+    print(f"\nDone. {failures} failure(s).")
     return 1 if failures else 0
 
 

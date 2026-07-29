@@ -265,18 +265,41 @@ def delete_content(content_id: str) -> None:
 IMAGE_BUCKET = "content-images"
 
 
-def upload_content_image(content_id: str, filename: str, data: bytes, content_type: str) -> str:
+def set_variant_image(content_id: str, platform: str, url: str) -> None:
+    """Attach an image to ONE platform's variant.
+
+    The daily images are produced per platform (2026-07-29-linkedin.png,
+    2026-07-29-facebook.png), so the image belongs next to that platform's copy rather than
+    on the post as a whole. Reads-modifies-writes the jsonb so the other platforms survive.
+    """
+    client = get_client()
+    current = client.table("content_calendar").select("variants").eq("id", content_id).execute()
+    variants = (current.data[0].get("variants") if current.data else None) or {}
+    if isinstance(variants, str):
+        import json
+
+        variants = json.loads(variants or "{}")
+
+    entry = dict(variants.get(platform) or {})
+    entry["image"] = url
+    variants[platform] = entry
+
+    client.table("content_calendar").update({"variants": variants}).eq("id", content_id).execute()
+
+
+def upload_content_image(content_id: str, filename: str, data: bytes, content_type: str,
+                         platform: str | None = None) -> str:
     """Put an image in Supabase Storage and return its public URL.
 
-    The scheduled Cowork chat has no image host, so the picture has to get here somehow.
-    This is the path that always works: a team member drops the file in and the tool hosts
-    it. The bucket is public because LinkedIn, Facebook and Instagram have to be able to
-    fetch the image when the post goes out.
+    The scheduled Cowork chat has no image host, so the picture has to get here somehow:
+    either synced from the images folder or dropped in by hand. The bucket is public because
+    LinkedIn, Facebook and Instagram have to fetch the image when the post goes out.
     """
     client = get_client()
     suffix = Path(filename).suffix.lower() or ".png"
-    # Key by content row so re-uploading replaces rather than accumulating orphans.
-    key = f"{content_id}{suffix}"
+    # Key by content row (and platform, when given) so re-uploading replaces rather than
+    # accumulating orphans.
+    key = f"{content_id}-{platform.lower()}{suffix}" if platform else f"{content_id}{suffix}"
 
     client.storage.from_(IMAGE_BUCKET).upload(
         path=key,

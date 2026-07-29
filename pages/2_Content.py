@@ -66,63 +66,52 @@ for post in visible:
         if post.get("target_audience"):
             st.caption(f"Audience: {post['target_audience']}")
 
-        image_col, copy_col = st.columns([1, 2])
+        available = [p for p in db.CONTENT_PLATFORMS if p in variants] or list(variants)
+        if not available:
+            st.warning("No copy on this row yet.")
+        else:
+            tabs = st.tabs([f"{PLATFORM_ICONS.get(p, '')}  {p}" for p in available])
+            for tab, platform in zip(tabs, available):
+                with tab:
+                    variant = variants.get(platform) or {}
+                    body = (variant.get("copy") or "").strip()
+                    tags = (variant.get("tags") or "").strip()
+                    # Per-platform image first, falling back to a post-wide one.
+                    image = (variant.get("image") or post.get("image_url") or "").strip()
 
-        with image_col:
-            if post.get("image_url"):
-                st.image(post["image_url"], use_container_width=True)
-                st.caption(f"[Open full size]({post['image_url']})")
-            else:
-                st.info("No image yet. Upload the one from the chat below.")
+                    image_col, copy_col = st.columns([1, 2])
 
-            # The scheduled chat cannot host an image, so this is how the picture arrives:
-            # save it out of the chat, drop it here, and the tool hosts it publicly.
-            uploaded = st.file_uploader(
-                "Upload image",
-                type=["png", "jpg", "jpeg", "webp", "gif"],
-                key=f"upload_{post['id']}",
-                label_visibility="collapsed",
-            )
-            if uploaded is not None:
-                try:
-                    with st.spinner("Uploading..."):
-                        url = db.upload_content_image(
-                            post["id"], uploaded.name, uploaded.getvalue(), uploaded.type
+                    with image_col:
+                        if image:
+                            st.image(image, use_container_width=True)
+                            st.caption(f"[Download for {platform}]({image})")
+                        else:
+                            st.info(f"No {platform} image.")
+
+                        uploaded = st.file_uploader(
+                            f"Upload {platform} image",
+                            type=["png", "jpg", "jpeg", "webp", "gif"],
+                            key=f"upload_{post['id']}_{platform}",
+                            label_visibility="collapsed",
                         )
-                        db.update_content(post["id"], image_url=url)
-                    st.success("Image attached.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Upload failed: {type(exc).__name__}: {str(exc)[:200]}")
+                        if uploaded is not None:
+                            try:
+                                with st.spinner("Uploading..."):
+                                    url = db.upload_content_image(
+                                        post["id"], uploaded.name, uploaded.getvalue(),
+                                        uploaded.type, platform=platform,
+                                    )
+                                    db.set_variant_image(post["id"], platform, url)
+                                st.success("Attached.")
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Upload failed: {type(exc).__name__}: {str(exc)[:200]}")
 
-            with st.popover("🔗 Or paste a URL", use_container_width=True):
-                url_input = st.text_input(
-                    "Image URL", value=post.get("image_url") or "", key=f"img_{post['id']}"
-                )
-                if st.button("Save URL", key=f"imgsave_{post['id']}"):
-                    try:
-                        db.update_content(post["id"], image_url=url_input.strip())
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Failed: {str(exc)[:200]}")
-
-        with copy_col:
-            available = [p for p in db.CONTENT_PLATFORMS if p in variants] or list(variants)
-            if not available:
-                st.warning("No copy on this row yet.")
-            else:
-                tabs = st.tabs([f"{PLATFORM_ICONS.get(p, '')}  {p}" for p in available])
-                for tab, platform in zip(tabs, available):
-                    with tab:
-                        variant = variants.get(platform) or {}
-                        body = (variant.get("copy") or "").strip()
-                        tags = (variant.get("tags") or "").strip()
-
+                    with copy_col:
                         # One block, so a single copy click grabs everything the platform needs.
                         full = f"{body}\n\n{tags}".strip() if tags else body
                         st.caption(f"Copy and paste straight into {platform}:")
                         st.code(full, language="markdown")
-
                         if tags:
                             st.caption(f"Tags: {tags}")
                         st.caption(f"{len(full)} characters")
