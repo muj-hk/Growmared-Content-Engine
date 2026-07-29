@@ -23,14 +23,12 @@ import os
 import time
 from pathlib import Path
 
-from dotenv import load_dotenv
+from config import get_secret
 
-load_dotenv(Path(__file__).with_name(".env"))
+PROVIDER = (get_secret("GROWMATED_PROVIDER") or "nvidia").lower()
 
-PROVIDER = os.getenv("GROWMATED_PROVIDER", "nvidia").strip().lower()
-
-NVIDIA_MODEL = os.getenv("GROWMATED_NVIDIA_MODEL", "mistralai/mistral-nemotron")
-CLAUDE_MODEL = os.getenv("GROWMATED_CLAUDE_MODEL", "claude-opus-5")
+NVIDIA_MODEL = get_secret("GROWMATED_NVIDIA_MODEL") or "mistralai/mistral-nemotron"
+CLAUDE_MODEL = get_secret("GROWMATED_CLAUDE_MODEL") or "claude-opus-5"
 MODEL = CLAUDE_MODEL if PROVIDER == "claude" else NVIDIA_MODEL
 
 # On Claude these are reasoning-effort levels. On NVIDIA there is no effort knob, so both
@@ -52,16 +50,8 @@ class RefusedError(RuntimeError):
 
 
 def load_api_key(name: str) -> str:
-    """Environment first, then .streamlit/secrets.toml. Never hardcode a key."""
-    key = os.getenv(name)
-    if not key:
-        try:
-            import streamlit as st
-
-            key = st.secrets[name]
-        except Exception:
-            key = None
-    return (key or "").strip()
+    """Environment first, then Streamlit secrets. Never hardcode a key."""
+    return get_secret(name)
 
 
 def build_client():

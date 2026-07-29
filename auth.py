@@ -10,25 +10,16 @@ obvious, not silently public.
 """
 
 import hmac
-import os
-from pathlib import Path
 
 import streamlit as st
-from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).with_name(".env"))
+from config import get_secret
 
 SESSION_KEY = "_growmated_authenticated"
 
 
 def _expected_password() -> str:
-    password = os.getenv("APP_PASSWORD")
-    if not password:
-        try:
-            password = st.secrets["APP_PASSWORD"]
-        except Exception:
-            password = None
-    return (password or "").strip()
+    return get_secret("APP_PASSWORD")
 
 
 def require_login() -> None:

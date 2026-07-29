@@ -11,16 +11,19 @@ Every function degrades gracefully: if Supabase is unreachable or unconfigured, 
 an explicit failure it can surface, and the tool keeps working in session-only mode.
 """
 
-import os
 from datetime import date
-from pathlib import Path
 
-from dotenv import load_dotenv
+from config import get_secret
 
-load_dotenv(Path(__file__).with_name(".env"))
 
-SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").strip()
-SUPABASE_KEY = (os.getenv("SUPABASE_KEY") or "").strip()
+# Read lazily rather than at import time: on Streamlit Cloud the secrets store is not
+# guaranteed to be populated the moment this module is first imported.
+def supabase_url() -> str:
+    return get_secret("SUPABASE_URL")
+
+
+def supabase_key() -> str:
+    return get_secret("SUPABASE_KEY")
 
 
 class DBUnavailable(RuntimeError):
@@ -62,15 +65,18 @@ CHANNEL_LABELS = {
 
 
 def is_configured() -> bool:
-    return bool(SUPABASE_URL and SUPABASE_KEY)
+    return bool(supabase_url() and supabase_key())
 
 
 def get_client():
     if not is_configured():
-        raise DBUnavailable("SUPABASE_URL / SUPABASE_KEY are not set in .env")
+        raise DBUnavailable(
+            "SUPABASE_URL / SUPABASE_KEY are not set. Add them to .env locally, "
+            "or to the app's secrets when deployed."
+        )
     from supabase import create_client
 
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    return create_client(supabase_url(), supabase_key())
 
 
 # --------------------------------------------------------------------------------------
