@@ -90,7 +90,12 @@ OUTREACH_SCHEMA = _obj({
     }),
     "responses": _obj({
         "comment": _STR, "dm": _STR, "email_subject": _STR,
-        "email_body": _STR, "proof_used": _STR,
+        "email_body": _STR, "proof_used": _PROOF,
+        # Learning-log classification, captured at write time so outcomes can be analysed
+        # against real message attributes later. Describes the DM/email, not the comment.
+        "opener_type": {"type": "string", "enum": ["observation", "question", "proof-lead", "pain-mirror"]},
+        "angle": _STR,
+        "cta_type": {"type": "string", "enum": ["situational-question", "free-audit", "specific-day", "other"]},
     }),
 })
 
@@ -129,7 +134,10 @@ string when a value is genuinely absent:
         "dm": "The DM",
         "email_subject": "Subject line, or empty string if no email was found",
         "email_body": "Email body, or empty string if no email was found",
-        "proof_used": "MUST be exactly one of these values and nothing else: PROOF_ID_LIST. Never invent an id. Use \\"none\\" if you cited no result."
+        "proof_used": "MUST be exactly one of these values and nothing else: PROOF_ID_LIST. Never invent an id. Use \\"none\\" if you cited no result.",
+        "opener_type": "How the DM opens: observation (something specific they wrote), question, proof-lead, or pain-mirror (restating their pain in their words)",
+        "angle": "The industry pain that led, as a short kebab-case slug, e.g. after-hours-missed-rides or 42hr-bottleneck",
+        "cta_type": "The call to action used: situational-question, free-audit, specific-day, or other"
     }
 }
 """

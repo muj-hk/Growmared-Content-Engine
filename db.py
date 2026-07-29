@@ -128,6 +128,8 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str, s
             ("email", responses.get("email_body")),
         ]
 
+    # Learning-log fields, captured at draft time per the OUTREACH LEARNING LOG spec.
+    # word_count is computed here, never trusted from the model.
     log_rows = [
         {
             "contact_name": extracted.get("name") or "Unknown",
@@ -136,6 +138,12 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str, s
             "content": content,
             "next_step": responses.get("opening_question") or None,
             "pipeline_id": pipeline_id,
+            "opener_type": responses.get("opener_type") or None,
+            "angle": responses.get("angle") or None,
+            "cta_type": responses.get("cta_type") or None,
+            "proof_used": responses.get("proof_used") or None,
+            "word_count": len(str(content).split()),
+            "touch_number": 1,
         }
         for key, content in channels
         if content and str(content).strip()
@@ -162,12 +170,53 @@ def list_messages(pipeline_id: str) -> list[dict]:
     client = get_client()
     result = (
         client.table("outreach_log")
-        .select("id, channel, direction, content, next_step, outcome, created_at")
+        .select("*")
         .eq("pipeline_id", pipeline_id)
         .order("created_at")
         .execute()
     )
     return result.data or []
+
+
+# Learning-log vocabularies, verbatim from the founder's spec.
+REPLY_QUALITIES = ["interested", "question", "brush-off", "hostile", "scam-probe"]
+OBJECTION_CATEGORIES = ["price", "timing", "have-someone", "distrust", "other"]
+FINAL_OUTCOMES = ["call_booked", "client", "dead"]
+
+
+def mark_message_sent(log_id: str) -> None:
+    """The draft actually went out. Stamps sent_at, which starts the days_to_reply clock."""
+    from datetime import datetime, timezone
+
+    client = get_client()
+    client.table("outreach_log").update(
+        {"direction": "sent", "sent_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", log_id).execute()
+
+
+def record_outcome(log_id: str, replied: bool, reply_text: str = "",
+                   reply_quality: str | None = None, objection_category: str | None = None,
+                   final_outcome: str | None = None) -> None:
+    """Log what happened, the moment it happens. reply_text is stored VERBATIM."""
+    from datetime import datetime, timezone
+
+    client = get_client()
+    row = client.table("outreach_log").select("sent_at").eq("id", log_id).execute()
+    sent_at = (row.data[0].get("sent_at") if row.data else None)
+
+    days = None
+    if replied and sent_at:
+        sent = datetime.fromisoformat(sent_at.replace("Z", "+00:00"))
+        days = round((datetime.now(timezone.utc) - sent).total_seconds() / 86400, 1)
+
+    client.table("outreach_log").update({
+        "replied": replied,
+        "days_to_reply": days,
+        "reply_text": reply_text.strip() or None,
+        "reply_quality": reply_quality,
+        "objection_category": objection_category,
+        "final_outcome": final_outcome,
+    }).eq("id", log_id).execute()
 
 
 def update_prospect_status(pipeline_id: str, status: str) -> None:
