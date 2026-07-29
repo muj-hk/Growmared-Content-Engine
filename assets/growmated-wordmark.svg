@@ -1,0 +1,11 @@
+<svg width="168" height="32" viewBox="0 0 168 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Growmated">
+  <!-- The gm mark, matching growmated.com/favicon.svg exactly. -->
+  <rect width="32" height="32" rx="6" fill="#08080A"/>
+  <text x="4" y="24" font-family="'Plus Jakarta Sans','Segoe UI',sans-serif" font-size="19" font-weight="800" letter-spacing="-0.5">
+    <tspan fill="#6366F1">g</tspan><tspan fill="#F2F2FA">m</tspan>
+  </text>
+  <circle cx="28.5" cy="7.5" r="2.8" fill="#6366F1"/>
+  <!-- Wordmark -->
+  <text x="42" y="17" font-family="'Plus Jakarta Sans','Segoe UI',sans-serif" font-size="14.5" font-weight="800" letter-spacing="-0.3" fill="#111827">Growmated</text>
+  <text x="42" y="27" font-family="Inter,'Segoe UI',sans-serif" font-size="8.5" font-weight="500" letter-spacing="0.2" fill="#6B7280">OPERATIONS ENGINE</text>
+</svg>

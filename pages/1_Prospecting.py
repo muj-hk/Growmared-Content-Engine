@@ -40,20 +40,23 @@ from quality import (
 )
 from ui import (
     inject_base_css,
+    page_header,
+    pill,
     render_brand,
     render_proof_banner,
     render_quality_warnings,
     sanitize_text,
 )
 
-st.set_page_config(page_title="Prospecting | Growmated Engine", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="Prospecting | Growmated Engine", page_icon="⚡", layout="wide")
 inject_base_css()
+render_brand()
 require_login()
 
 VALID_PROOF_IDS = {entry["id"] for entry in PROOF_BANK}
 
 MODES = {
-    "💬 Social post / profile": {
+    "Social post / profile": {
         "key": "social",
         "prompt": build_outreach_system_prompt,
         "schema": OUTREACH_SCHEMA,
@@ -61,7 +64,7 @@ MODES = {
         "placeholder": "Paste a Facebook post, LinkedIn profile, group thread or email...",
         "default_source": "Facebook Post",
     },
-    "📄 Upwork job post": {
+    "Upwork job post": {
         "key": "upwork",
         "prompt": build_upwork_system_prompt,
         "schema": UPWORK_SCHEMA,
@@ -74,16 +77,18 @@ MODES = {
 if "prospect_history" not in st.session_state:
     st.session_state.prospect_history = []
 
-render_brand()
-
-st.title("Prospecting")
-st.caption("Paste a raw dump. Get outreach grounded in real Growmated proof, ready to send.")
+page_header(
+    "Prospecting",
+    "Paste anything they wrote. It works out what it is, writes only what fits, "
+    "and tells you when to skip.",
+    "target",
+)
 
 # ----------------------------------------------------------------------------------------
 # Controls
 # ----------------------------------------------------------------------------------------
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("Settings")
     mode_label = st.radio("Input type", list(MODES), index=0)
     mode = MODES[mode_label]
 
@@ -103,7 +108,7 @@ with st.sidebar:
         st.caption(f"⏱️ Last generation: {st.session_state.last_latency:.1f}s")
 
     st.divider()
-    if st.button("🗑️ Clear this session", use_container_width=True):
+    if st.button("Clear this session", use_container_width=True):
         st.session_state.prospect_history = []
         st.rerun()
 
@@ -239,25 +244,21 @@ for idx, item in enumerate(reversed(st.session_state.prospect_history)):
         if item.get("save_error"):
             st.warning(f"Draft generated but not saved to pipeline: {item['save_error']}")
         elif item.get("saved_id"):
-            st.caption("💾 Saved to pipeline")
+            st.markdown(pill("Saved to pipeline", "mute", "check"), unsafe_allow_html=True)
 
         st.divider()
 
         if item["mode"] == "upwork":
             # The bid decision comes first: whether to spend connects matters more than the copy.
             bid = (resp.get("bid") or "").lower()
-            bid_style = {
-                "bid": ("✅", st.success),
-                "maybe": ("🟡", st.warning),
-                "skip": ("⛔", st.error),
-            }.get(bid, ("⚪", st.info))
-            icon, writer = bid_style
-            writer(f"{icon} **{bid.upper() or 'UNSCORED'}** — {resp.get('bid_reason', 'no reason given')}")
+            writer = {"bid": st.success, "maybe": st.warning, "skip": st.error}.get(bid, st.info)
+            verdict = {"bid": "BID", "maybe": "MAYBE", "skip": "DO NOT BID"}.get(bid, "UNSCORED")
+            writer(f"**{verdict}** — {resp.get('bid_reason', 'no reason given')}")
 
             fit = (resp.get("fit_score") or "unknown").lower()
             st.caption(f"Fit: {fit} · {resp.get('fit_reason', '')}")
             if resp.get("red_flags"):
-                st.caption(f"⚠️ Red flags: {resp['red_flags']}")
+                st.caption(f"Red flags: {resp['red_flags']}")
             if resp.get("client_risk"):
                 st.caption(f"Client's likely worry: {resp['client_risk']}")
 

@@ -37,9 +37,11 @@ def require_login() -> None:
         )
         st.stop()
 
-    from ui import render_brand
+    from pathlib import Path
 
-    render_brand(sidebar=False)
+    wordmark = Path(__file__).parent / "assets" / "growmated-wordmark.svg"
+    if wordmark.exists():
+        st.image(str(wordmark), width=200)
     st.subheader("Team access")
     st.caption("This tool reads and writes live client data. Sign in to continue.")
 

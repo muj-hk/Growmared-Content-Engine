@@ -12,28 +12,28 @@ import streamlit as st
 
 import db
 from auth import require_login
-from ui import inject_base_css, render_brand
+from ui import inject_base_css, page_header, render_brand
 
 st.set_page_config(page_title="Content | Growmated Engine", page_icon="📝", layout="wide")
 inject_base_css()
+render_brand()
 require_login()
 
-PLATFORM_ICONS = {"LinkedIn": "in", "Facebook": "f", "Instagram": "ig"}
-
-render_brand()
-
-st.title("Content")
-st.caption("Today's posts from the scheduled chat. Pick a platform, copy, post.")
+page_header(
+    "Content",
+    "Today's posts from the scheduled chat. Pick a platform, copy, post.",
+    "inbox",
+)
 
 if not db.is_configured():
     st.error("Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY in .env.")
     st.stop()
 
 with st.sidebar:
-    st.header("⚙️ View")
+    st.header("View")
     show_posted = st.toggle("Show posted", value=False)
     show_archived = st.toggle("Show archived", value=False)
-    if st.button("🔄 Refresh", use_container_width=True):
+    if st.button("Refresh", use_container_width=True):
         st.rerun()
 
 try:
@@ -60,11 +60,11 @@ st.divider()
 
 for post in visible:
     status = post.get("status") or "Draft"
-    icon = {"Draft": "📄", "Scheduled": "📅", "Posted": "✅", "Archived": "📦"}.get(status, "•")
+    marker = {"Draft": "Draft", "Scheduled": "Scheduled", "Posted": "Posted", "Archived": "Archived"}.get(status, status)
     when = post.get("scheduled_date") or (post.get("created_at") or "")[:10]
     variants = db.get_variants(post)
 
-    with st.expander(f"{icon} {post.get('title') or '(untitled)'} · {when}", expanded=(post is visible[0])):
+    with st.expander(f"{post.get('title') or '(untitled)'}  ·  {when}  ·  {marker}", expanded=(post is visible[0])):
         if post.get("target_audience"):
             st.caption(f"Audience: {post['target_audience']}")
 
@@ -72,7 +72,7 @@ for post in visible:
         if not available:
             st.warning("No copy on this row yet.")
         else:
-            tabs = st.tabs([f"{PLATFORM_ICONS.get(p, '')}  {p}" for p in available])
+            tabs = st.tabs(available)
             for tab, platform in zip(tabs, available):
                 with tab:
                     variant = variants.get(platform) or {}
@@ -120,13 +120,13 @@ for post in visible:
 
         st.divider()
         action_col, archive_col = st.columns([2, 1])
-        if action_col.button("✅ Mark posted", key=f"posted_{post['id']}", use_container_width=True):
+        if action_col.button("Mark posted", key=f"posted_{post['id']}", use_container_width=True):
             try:
                 db.mark_posted(post["id"])
                 st.rerun()
             except Exception as exc:
                 st.error(f"Failed: {str(exc)[:200]}")
-        if archive_col.button("📦 Archive", key=f"arch_{post['id']}", use_container_width=True):
+        if archive_col.button("Archive", key=f"arch_{post['id']}", use_container_width=True):
             try:
                 db.update_content(post["id"], status="Archived")
                 st.rerun()

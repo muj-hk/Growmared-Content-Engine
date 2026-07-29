@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Growmated">
+  <rect width="32" height="32" rx="6" fill="#08080A"/>
+  <text x="4" y="24" font-family="'Plus Jakarta Sans','Segoe UI',sans-serif" font-size="19" font-weight="800" letter-spacing="-0.5">
+    <tspan fill="#6366F1">g</tspan><tspan fill="#F2F2FA">m</tspan>
+  </text>
+  <circle cx="28.5" cy="7.5" r="2.8" fill="#6366F1"/>
+</svg>

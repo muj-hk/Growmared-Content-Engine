@@ -34,8 +34,8 @@ MODEL = CLAUDE_MODEL if PROVIDER == "claude" else NVIDIA_MODEL
 # On Claude these are reasoning-effort levels. On NVIDIA there is no effort knob, so both
 # modes run the same model and the toggle simply has no effect.
 SPEED_MODES = {
-    "🎯 Quality": {"effort": "high", "caption": f"Full reasoning. Model: {MODEL}"},
-    "⚡ Fast": {"effort": "low", "caption": "Less reasoning. Check the proof banner."},
+    "Quality": {"effort": "high", "caption": f"Full reasoning. Model: {MODEL}"},
+    "Fast": {"effort": "low", "caption": "Less reasoning. Check the proof banner."},
 }
 
 MAX_OUTPUT_TOKENS = 4000

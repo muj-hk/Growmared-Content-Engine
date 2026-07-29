@@ -12,15 +12,18 @@ import streamlit as st
 
 import db
 from auth import require_login
-from ui import inject_base_css, render_brand
+from ui import inject_base_css, page_header, render_brand
 
 st.set_page_config(page_title="Insights | Growmated Engine", page_icon="📊", layout="wide")
 inject_base_css()
-require_login()
 render_brand()
+require_login()
 
-st.title("Insights")
-st.caption("What the data says to do differently. Computed from the pipeline and outreach log.")
+page_header(
+    "Insights",
+    "What the data says to do differently. Computed from the pipeline and outreach log.",
+    "chart",
+)
 
 if not db.is_configured():
     st.error("Supabase is not configured.")
@@ -104,7 +107,7 @@ for key, title in (
     any_pattern = True
     st.markdown(f"**{title}**")
     for value, total, wins, scams in rows:
-        note = f"  ·  ⚠️ {scams} scam-probe" if scams else ""
+        note = f"  ·  {scams} scam-probe (flagged, not a win)" if scams else ""
         st.write(f"{value} — {wins}/{total} replied ({wins/total:.0%}){note}")
         st.progress(wins / total)
 

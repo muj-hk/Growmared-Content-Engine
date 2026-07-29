@@ -11,15 +11,18 @@ import streamlit as st
 
 import db
 from auth import require_login
-from ui import inject_base_css, render_brand
+from ui import inject_base_css, page_header, render_brand
 
 st.set_page_config(page_title="Pipeline | Growmated Engine", page_icon="📈", layout="wide")
 inject_base_css()
-require_login()
 render_brand()
+require_login()
 
-st.title("Pipeline")
-st.caption("Mark drafts sent, and log every reply verbatim. Zero-reply messages are data too.")
+page_header(
+    "Pipeline",
+    "Mark drafts sent, and log every reply verbatim. Zero-reply messages are data too.",
+    "send",
+)
 
 if not db.is_configured():
     st.error("Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY.")
@@ -85,11 +88,12 @@ if not messages:
 for msg in messages:
     sent = bool(msg.get("sent_at"))
     replied = msg.get("replied")
-    icon = "📨" if not sent else ("💬" if replied else "⏳")
-    outcome_note = f" · {msg.get('final_outcome')}" if msg.get("final_outcome") else ""
+    state = "Draft" if not sent else ("Replied" if replied else "Awaiting reply")
+    outcome_note = f"  ·  {msg.get('final_outcome')}" if msg.get("final_outcome") else ""
 
     with st.expander(
-        f"{icon} {msg.get('channel')} · {'sent ' + msg['sent_at'][:10] if sent else 'draft'}{outcome_note}",
+        f"{msg.get('channel')}  ·  {'sent ' + msg['sent_at'][:10] if sent else 'not sent'}"
+        f"  ·  {state}{outcome_note}",
         expanded=not sent,
     ):
         st.code(msg.get("content") or "", language="markdown")
@@ -102,7 +106,7 @@ for msg in messages:
             st.caption(attrs)
 
         if not sent:
-            if st.button("✅ Mark sent", key=f"sent_{msg['id']}", use_container_width=True):
+            if st.button("Mark sent", key=f"sent_{msg['id']}", use_container_width=True):
                 try:
                     db.mark_message_sent(msg["id"])
                     st.rerun()
