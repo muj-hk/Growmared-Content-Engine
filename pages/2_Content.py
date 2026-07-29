@@ -73,12 +73,35 @@ for post in visible:
                 st.image(post["image_url"], use_container_width=True)
                 st.caption(f"[Open full size]({post['image_url']})")
             else:
-                st.info("No image attached.")
-            with st.popover("🖼️ Set image URL", use_container_width=True):
-                url = st.text_input("Image URL", value=post.get("image_url") or "", key=f"img_{post['id']}")
-                if st.button("Save image", key=f"imgsave_{post['id']}"):
+                st.info("No image yet. Upload the one from the chat below.")
+
+            # The scheduled chat cannot host an image, so this is how the picture arrives:
+            # save it out of the chat, drop it here, and the tool hosts it publicly.
+            uploaded = st.file_uploader(
+                "Upload image",
+                type=["png", "jpg", "jpeg", "webp", "gif"],
+                key=f"upload_{post['id']}",
+                label_visibility="collapsed",
+            )
+            if uploaded is not None:
+                try:
+                    with st.spinner("Uploading..."):
+                        url = db.upload_content_image(
+                            post["id"], uploaded.name, uploaded.getvalue(), uploaded.type
+                        )
+                        db.update_content(post["id"], image_url=url)
+                    st.success("Image attached.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Upload failed: {type(exc).__name__}: {str(exc)[:200]}")
+
+            with st.popover("🔗 Or paste a URL", use_container_width=True):
+                url_input = st.text_input(
+                    "Image URL", value=post.get("image_url") or "", key=f"img_{post['id']}"
+                )
+                if st.button("Save URL", key=f"imgsave_{post['id']}"):
                     try:
-                        db.update_content(post["id"], image_url=url.strip())
+                        db.update_content(post["id"], image_url=url_input.strip())
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Failed: {str(exc)[:200]}")

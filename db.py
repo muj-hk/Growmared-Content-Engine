@@ -12,6 +12,7 @@ an explicit failure it can surface, and the tool keeps working in session-only m
 """
 
 from datetime import date
+from pathlib import Path
 
 from config import get_secret
 
@@ -255,3 +256,33 @@ def mark_posted(content_id: str) -> None:
 def delete_content(content_id: str) -> None:
     client = get_client()
     client.table("content_calendar").delete().eq("id", content_id).execute()
+
+
+# --------------------------------------------------------------------------------------
+# Image storage
+# --------------------------------------------------------------------------------------
+
+IMAGE_BUCKET = "content-images"
+
+
+def upload_content_image(content_id: str, filename: str, data: bytes, content_type: str) -> str:
+    """Put an image in Supabase Storage and return its public URL.
+
+    The scheduled Cowork chat has no image host, so the picture has to get here somehow.
+    This is the path that always works: a team member drops the file in and the tool hosts
+    it. The bucket is public because LinkedIn, Facebook and Instagram have to be able to
+    fetch the image when the post goes out.
+    """
+    client = get_client()
+    suffix = Path(filename).suffix.lower() or ".png"
+    # Key by content row so re-uploading replaces rather than accumulating orphans.
+    key = f"{content_id}{suffix}"
+
+    client.storage.from_(IMAGE_BUCKET).upload(
+        path=key,
+        file=data,
+        file_options={"content-type": content_type, "upsert": "true"},
+    )
+    public_url = client.storage.from_(IMAGE_BUCKET).get_public_url(key)
+    # Supabase appends a trailing "?" on some client versions; it breaks nothing but is ugly.
+    return public_url.rstrip("?")
