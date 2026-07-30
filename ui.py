@@ -261,6 +261,37 @@ h1, h2, h3, h4 {{ margin-top: 0 !important; }}
 }}
 
 /* Motion is a nice-to-have, never a requirement. */
+/* The system feels alive: a slow-drifting node field behind everything, like the automation
+   working underneath. Fixed, non-interactive, faint enough to never fight the data. */
+.stApp::before {{
+    content: ""; position: fixed; inset: -60px; z-index: 0; pointer-events: none;
+    background-image:
+        radial-gradient(2px 2px at 12% 20%, rgba(82,84,204,0.35) 40%, transparent 60%),
+        radial-gradient(2px 2px at 78% 12%, rgba(99,102,241,0.30) 40%, transparent 60%),
+        radial-gradient(2px 2px at 30% 74%, rgba(82,84,204,0.28) 40%, transparent 60%),
+        radial-gradient(2px 2px at 64% 52%, rgba(99,102,241,0.32) 40%, transparent 60%),
+        radial-gradient(2px 2px at 90% 80%, rgba(82,84,204,0.26) 40%, transparent 60%),
+        radial-gradient(2px 2px at 45% 32%, rgba(99,102,241,0.22) 40%, transparent 60%),
+        linear-gradient(115deg, transparent 46%, rgba(82,84,204,0.05) 50%, transparent 54%);
+    background-size: 340px 340px, 420px 420px, 380px 380px, 300px 300px, 460px 460px,
+                     520px 520px, 900px 900px;
+    animation: gm-drift 70s linear infinite;
+    opacity: 0.55;
+}}
+.stApp::after {{
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(700px 380px at 85% -8%, rgba(99,102,241,0.10), transparent 70%);
+    animation: gm-pulse 9s ease-in-out infinite alternate;
+}}
+@keyframes gm-drift {{
+    from {{ background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; }}
+    to {{ background-position: 340px 220px, -420px 260px, 300px -300px, -220px 180px,
+          380px 300px, -400px -260px, 900px 0; }}
+}}
+@keyframes gm-pulse {{ from {{ opacity: 0.5; }} to {{ opacity: 1; }} }}
+/* Content sits above the field. */
+.block-container, [data-testid="stSidebar"], [data-testid="stHeader"] {{ position: relative; z-index: 1; }}
+
 @media (prefers-reduced-motion: reduce) {{
     *, *::before, *::after {{ transition: none !important; animation: none !important; }}
 }}
