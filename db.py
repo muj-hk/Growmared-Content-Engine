@@ -342,6 +342,30 @@ def email_queue(prospects_rows: list[dict] | None = None,
     return {"send_now": send_now, "scheduled": scheduled, "awaiting": awaiting, "stopped": stopped}
 
 
+def mark_bundle_sent(pipeline_id: str) -> None:
+    """The team sends social copy the moment it is generated, so generated == sent for
+    comment/DM/answer/reply/proposal rows. Cold Email rows stay drafts: their sequence is
+    timed and worked from the Emails queue."""
+    client = get_client()
+    rows = (client.table("outreach_log").select("id")
+            .eq("pipeline_id", pipeline_id).eq("direction", "draft")
+            .neq("channel", "Email").execute().data or [])
+    for row in rows:
+        mark_message_sent(row["id"])
+
+
+def revise_message(pipeline_id: str, channel_label: str, new_content: str) -> None:
+    """Team-requested revision UPDATES the existing row in place - never a duplicate."""
+    client = get_client()
+    row = (client.table("outreach_log").select("id")
+           .eq("pipeline_id", pipeline_id).eq("channel", channel_label)
+           .order("created_at", desc=True).limit(1).execute().data)
+    if row:
+        client.table("outreach_log").update(
+            {"content": new_content, "word_count": len(new_content.split())}
+        ).eq("id", row[0]["id"]).execute()
+
+
 def mark_bounced(pipeline_id: str) -> None:
     """Bounce kills the whole sequence, not just one message."""
     update_prospect_status(pipeline_id, "Bounced")

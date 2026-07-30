@@ -51,11 +51,34 @@ if not snap.ok:
     st.error(f"**Database unavailable.** {snap.error}")
 
 with st.sidebar:
-    st.markdown('<div class="gm-section" style="margin-top:4px">Session</div>',
+    st.markdown('<div class="gm-section" style="margin-top:4px">Switches</div>',
                 unsafe_allow_html=True)
+    st.toggle("Dark mode", key="dark_mode",
+              help="Dark surfaces for late sessions. Preference is per browser session.")
+    st.toggle("Generated = sent", key="auto_sent", value=True,
+              help="The team sends social copy immediately, so new drafts log as sent. "
+                   "Cold emails always stay in the timed queue.")
+    st.markdown('<div class="gm-section">Session</div>', unsafe_allow_html=True)
     if st.button("Refresh data", use_container_width=True):
         data_mod.refresh()
         st.rerun()
+
+if st.session_state.get("dark_mode"):
+    st.markdown("""<style>
+    .stApp, [data-testid="stHeader"] {background:#0E0E15 !important;}
+    [data-testid="stSidebar"] {background:#12121B !important; border-right-color:rgba(255,255,255,0.08) !important;}
+    h1,h2,h3,h4,p,li,label,.stMarkdown,[data-testid="stMetricLabel"],[data-testid="stWidgetLabel"] p {color:#ECECF1 !important;}
+    .gm-kpi,.gm-action,[data-testid="stExpander"] {background:#161622 !important; border-color:rgba(255,255,255,0.09) !important;}
+    .gm-kpi__value,.gm-brand__name,[data-testid="stMetricValue"] {color:#ECECF1 !important;}
+    .gm-kpi__label,.gm-kpi__note,.gm-action__body,[data-testid="stCaptionContainer"] p,.gm-section {color:#A0A0AD !important;}
+    .gm-action__body strong {color:#ECECF1 !important;}
+    [data-testid="stTextArea"] textarea:disabled,[data-testid="stTextArea"] textarea,
+    .stTextInput input,[data-baseweb="select"] > div {background:#161622 !important; color:#ECECF1 !important; -webkit-text-fill-color:#ECECF1 !important; border-color:rgba(255,255,255,0.12) !important;}
+    .stButton > button {background:#161622; color:#ECECF1; border-color:rgba(255,255,255,0.14);}
+    .stTabs [data-baseweb="tab"] {color:#A0A0AD;}
+    .stTabs [aria-selected="true"] {color:#8B8DF0 !important;}
+    .gm-pill--mute {background:#161622; color:#A0A0AD; border-color:rgba(255,255,255,0.12);}
+    </style>""", unsafe_allow_html=True)
     render_sign_out()
     st.markdown(
         pill(f"{PROVIDER}: {MODEL}", "good" if key_ok and not dependency_problem else "bad",

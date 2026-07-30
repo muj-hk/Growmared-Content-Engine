@@ -80,6 +80,9 @@ def _generate(text: str, mode: dict, effort: str, source: str) -> None:
                     item["saved_id"] = db.save_prospect(
                         item["extracted"], item["responses"], text, mode["key"], source,
                         intent=item["routing"].get("intent"))
+                    # Team sends what it generates, so log it as sent unless toggled off.
+                    if st.session_state.get("auto_sent", True):
+                        db.mark_bundle_sent(item["saved_id"])
                     data_mod.refresh()
                 except Exception as exc:
                     item["save_error"] = str(exc)[:300]
@@ -209,3 +212,28 @@ def render(snap) -> None:
                 objection = resp.get("objection_category")
                 if objection and objection != "none":
                     st.caption(f"Objection detected: **{objection}**")
+
+            # Revisions: rewrite one field in place. Updates the SAME DB row, never a new one.
+            with st.popover("Revise a message"):
+                fields = [f for f in ("comment", "dm", "email_body", "answer", "reply",
+                                      "proposal") if (resp.get(f) or "").strip()]
+                if fields:
+                    target = st.selectbox("Which one?", fields, key=f"rvf_{idx}")
+                    ask = st.text_input("What should change?", key=f"rvq_{idx}",
+                                        placeholder="e.g. shorter, mention their timeline")
+                    if st.button("Revise", key=f"rvb_{idx}") and ask.strip():
+                        try:
+                            client = build_client()
+                            new_text = repair_until_clean(client, {
+                                **resp, target:
+                                f"REVISE PER TEAM NOTE ({ask.strip()}):\n{resp[target]}"},
+                                mode["repair_schema"]).get(target, resp[target])
+                            resp[target] = new_text
+                            if item.get("saved_id"):
+                                label = db.CHANNEL_LABELS.get(
+                                    "email" if target == "email_body" else target, target)
+                                db.revise_message(item["saved_id"], label, new_text)
+                                data_mod.refresh()
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Revision failed: {str(exc)[:200]}")

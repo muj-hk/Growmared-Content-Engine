@@ -136,7 +136,10 @@ def generate_json(client, system_prompt: str, user_content: str, schema: dict,
         message = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=8000,  # caps thinking + text together on this model
-            system=system_prompt,
+            # cache_control: the ~16k-char system prompt is identical across calls, so caching
+            # it cuts its input cost ~90% on every generation after the first in a 5-min window.
+            system=[{"type": "text", "text": system_prompt,
+                     "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_content}],
             output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
         )
