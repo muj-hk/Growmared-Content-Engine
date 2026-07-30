@@ -12,7 +12,7 @@ import streamlit as st
 
 import db
 from auth import require_login
-from ui import inject_base_css, page_header, render_brand
+from ui import copy_block, inject_base_css, page_header, render_brand
 
 st.set_page_config(page_title="Content | Growmated Engine", page_icon="📝", layout="wide")
 inject_base_css()
@@ -113,7 +113,7 @@ for post in visible:
                         # One block, so a single copy click grabs everything the platform needs.
                         full = f"{body}\n\n{tags}".strip() if tags else body
                         st.caption(f"Copy and paste straight into {platform}:")
-                        st.code(full, language="markdown")
+                        copy_block(full)
                         if tags:
                             st.caption(f"Tags: {tags}")
                         st.caption(f"{len(full)} characters")

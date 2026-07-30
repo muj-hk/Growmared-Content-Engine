@@ -11,7 +11,7 @@ import streamlit as st
 
 import db
 from auth import require_login
-from ui import inject_base_css, page_header, render_brand
+from ui import copy_block, inject_base_css, page_header, render_brand
 
 st.set_page_config(page_title="Pipeline | Growmated Engine", page_icon="📈", layout="wide")
 inject_base_css()
@@ -96,7 +96,7 @@ for msg in messages:
         f"  ·  {state}{outcome_note}",
         expanded=not sent,
     ):
-        st.code(msg.get("content") or "", language="markdown")
+        copy_block(msg.get("content") or "")
         attrs = " · ".join(
             f"{k}: {msg.get(k)}"
             for k in ("opener_type", "angle", "cta_type", "proof_used", "word_count")
@@ -122,7 +122,7 @@ for msg in messages:
                 + (f", quality={msg.get('reply_quality')}" if msg.get("reply_quality") else "")
             )
             if msg.get("reply_text"):
-                st.code(msg["reply_text"], language="markdown")
+                copy_block(msg["reply_text"])
 
         with st.form(f"outcome_{msg['id']}"):
             got_reply = st.radio("Did they reply?", ["Yes", "No (still silent)"], horizontal=True)

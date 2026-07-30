@@ -16,7 +16,7 @@ import streamlit as st
 
 import db
 from auth import require_login
-from ui import inject_base_css, kpi_row, page_header, pill, render_brand, section
+from ui import copy_block, inject_base_css, kpi_row, page_header, pill, render_brand, section
 
 st.set_page_config(page_title="Emails | Growmated Engine", page_icon="⚡", layout="wide")
 inject_base_css()
@@ -83,11 +83,11 @@ if send_now:
             )
             if touch == 1 and msg.get("subject"):
                 st.caption("Subject")
-                st.code(msg["subject"], language="markdown")
+                copy_block(msg["subject"])
             elif touch > 1:
                 st.caption("Send as a reply in the SAME Gmail thread, so the subject stays Re:")
             st.caption("Body")
-            st.code(msg.get("content") or "", language="markdown")
+            copy_block(msg.get("content") or "")
 
             c1, c2 = st.columns([2, 1])
             if c1.button("Mark sent", key=f"send_{msg['id']}", use_container_width=True):
@@ -115,7 +115,7 @@ if awaiting:
     for item in awaiting:
         prospect, msg = item["prospect"], item["message"]
         with st.expander(f"{prospect.get('business_name')}  ·  {item['due_note']}"):
-            st.code(msg.get("content") or "", language="markdown")
+            copy_block(msg.get("content") or "")
             with st.form(f"outcome_{msg['id']}"):
                 got = st.radio("What happened?", ["Replied", "Bounced", "Still nothing"], horizontal=True)
                 reply_text = st.text_area("Reply text, VERBATIM (if they replied)", height=90)

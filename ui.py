@@ -15,6 +15,7 @@ Rules being followed deliberately, because breaking them is what made this look 
 """
 
 import re
+from itertools import count
 from pathlib import Path
 
 import streamlit as st
@@ -113,7 +114,7 @@ h3 {{ font-size: 1rem !important; }}
 [data-testid="stVerticalBlock"] {{ gap: var(--gm-s2); }}
 
 /* Numbers must not jitter when they change. */
-[data-testid="stMetricValue"], .gm-kpi__value, .gm-num, code, pre {{
+[data-testid="stMetricValue"], .gm-kpi__value, .gm-num {{
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
 }}
@@ -125,18 +126,20 @@ h3 {{ font-size: 1rem !important; }}
 }}
 [data-testid="stMetricLabel"] {{ color: var(--gm-gray-mid); font-size: 0.78rem; font-weight: 500; }}
 
-/* st.code is the copy surface for every draft: wrap, never scroll sideways. */
-.stCode > div, .stCode pre, .stCode code {{
-    white-space: pre-wrap !important;
-    word-break: break-word !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 0.92rem;
-    line-height: 1.6;
+/* Copy surfaces are read-only text areas (see ui.copy_block, and the comment there about
+   st.code's broken wrap_lines). Style them to read like a document, not a form field. */
+[data-testid="stTextArea"] textarea:disabled {{
     background: var(--gm-bg2) !important;
-    border: 1px solid var(--gm-border);
-    border-radius: var(--gm-radius);
     color: var(--gm-ink) !important;
-    padding: var(--gm-s2) var(--gm-s3) !important;
+    -webkit-text-fill-color: var(--gm-ink) !important;
+    opacity: 1 !important;
+    border: 1px solid var(--gm-border) !important;
+    border-radius: var(--gm-radius);
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.92rem !important;
+    line-height: 1.6 !important;
+    cursor: text;
+    resize: vertical;
 }}
 
 .stButton > button {{
@@ -174,9 +177,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
 }}
 [data-testid="stExpander"] summary {{ font-weight: 600; font-size: 0.92rem; }}
 
-/* Captions render with an overhanging text box at dense gaps and bleed into the next
-   element (caption <> page-link overlap). Give them their own clearance. */
-[data-testid="stCaptionContainer"] {{ padding-bottom: 10px; }}
+/* Clearance below captions. Margin, not padding: padding extends the caption's own box
+   down into the following element, which reads as an overlap to any geometry check even
+   though the text itself does not collide. */
+[data-testid="stCaptionContainer"] {{ margin-bottom: 8px; }}
 [data-testid="stCaptionContainer"] p {{ margin-bottom: 0; line-height: 1.5; }}
 
 [data-testid="stSidebar"] {{ background: var(--gm-bg2); border-right: 1px solid var(--gm-border); }}
@@ -339,6 +343,38 @@ def bar(fraction: float) -> None:
     st.markdown(
         f'<div class="gm-bar"><div class="gm-bar__fill" style="width:{pct:.0f}%"></div></div>',
         unsafe_allow_html=True,
+    )
+
+
+_copy_seq = count()
+
+
+def copy_block(text: str, key: str | None = None) -> None:
+    """Show copy-ready text.
+
+    Deliberately NOT st.code: with wrap_lines=True Streamlit 1.60 wraps the text but does not
+    recompute each line's height, so long paragraphs paint on top of each other (measured 15
+    overlapping lines on one proposal). Reproduced with all custom CSS removed, so it is the
+    widget, not our theme.
+
+    A read-only text_area wraps correctly, preserves the text byte-for-byte for pasting, and
+    supports select-all + copy. Height is estimated from content so there is no inner scroll
+    for normal-length copy.
+    """
+    body = text or ""
+    # Measured in-browser rather than guessed: in the narrowest place these appear (a 2/3
+    # column beside the image) the textarea fits ~60 chars per row at 23.55px line-height
+    # with 24px vertical padding. Using 56 chars per row keeps a margin for wider glyphs so
+    # nothing clips; wider columns simply get a little slack at the bottom.
+    rows = sum(max(1, -(-len(line) // 56)) for line in body.split("\n")) or 1
+    height = max(90, min(1400, round(24 * rows) + 30))
+    st.text_area(
+        "copy",
+        value=body,
+        height=height,
+        key=key or f"copy_{next(_copy_seq)}",
+        label_visibility="collapsed",
+        disabled=True,
     )
 
 

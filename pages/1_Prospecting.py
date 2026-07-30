@@ -39,6 +39,7 @@ from quality import (
     repairable_fields,
 )
 from ui import (
+    copy_block,
     inject_base_css,
     page_header,
     pill,
@@ -263,10 +264,10 @@ for idx, item in enumerate(reversed(st.session_state.prospect_history)):
                 st.caption(f"Client's likely worry: {resp['client_risk']}")
 
             st.caption("Paste into Upwork:")
-            st.code(resp.get("proposal", "N/A"), language="markdown")
+            copy_block(resp.get("proposal", "N/A"))
             if resp.get("questions_to_ask"):
                 st.caption("Ask before quoting a number:")
-                st.code(resp["questions_to_ask"], language="markdown")
+                copy_block(resp["questions_to_ask"])
         else:
             # Render only what this intent produced, so nobody sends an irrelevant channel.
             available = [
@@ -292,10 +293,10 @@ for idx, item in enumerate(reversed(st.session_state.prospect_history)):
                         if name == "email":
                             st.caption(f"Send to: **{ext.get('email', 'unknown')}**")
                             st.text_input("Subject", value=resp.get("email_subject", ""), key=f"subj_{idx}")
-                            st.code(resp.get("email_body", ""), language="markdown")
+                            copy_block(resp.get("email_body", ""))
                         else:
                             st.caption(caption)
-                            st.code(resp.get(name, ""), language="markdown")
+                            copy_block(resp.get(name, ""))
 
             objection = resp.get("objection_category")
             if objection and objection != "none":
