@@ -151,6 +151,15 @@ h3 {{ font-size: 1rem !important; }}
     cursor: pointer;
 }}
 .stButton > button:hover {{ border-color: var(--gm-indigo); color: var(--gm-indigo); background: var(--gm-indigo-soft); }}
+.stButton > button:active {{ transform: scale(0.985); }}
+
+/* Info/success/warning boxes: quiet left-accent panels, not big blue billboards. */
+[data-testid="stAlertContainer"] {{
+    border-radius: var(--gm-radius);
+    border-left-width: 3px;
+    padding-top: var(--gm-s1); padding-bottom: var(--gm-s1);
+    font-size: 0.88rem;
+}}
 
 /* Focus must always be visible. Removing it fails WCAG and makes keyboard use guesswork. */
 .stButton > button:focus-visible,
@@ -402,7 +411,10 @@ def copy_block(text: str, key: str | None = None) -> None:
     # with 24px vertical padding. Using 56 chars per row keeps a margin for wider glyphs so
     # nothing clips; wider columns simply get a little slack at the bottom.
     rows = sum(max(1, -(-len(line) // 56)) for line in body.split("\n")) or 1
-    height = max(90, min(1400, round(24 * rows) + 30))
+    # Cap at ~14 visible rows: long copy scrolls INSIDE its own bounded panel instead of
+    # stretching the page. Endless page scroll is the amateur signal; a bounded, scrollable
+    # reading pane is the professional one. Select-all still copies the full text.
+    height = max(90, min(370, round(24 * rows) + 30))
     st.text_area(
         "copy",
         value=body,

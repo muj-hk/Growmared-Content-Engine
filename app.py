@@ -31,7 +31,9 @@ inject_base_css()
 render_brand()
 require_login()
 
-page_header("Growmated Engine", BRAND["tagline"], "chart")
+# No repeated title block: the wordmark in the sidebar already carries identity, and saying
+# "Growmated Engine" three times before any data is what made the top feel like filler.
+# The page opens straight into the tabs and the numbers.
 
 # ------------------------------------------------------------------------------------------
 # Setup problems surface here, before any tab tries to work
