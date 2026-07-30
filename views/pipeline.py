@@ -63,6 +63,25 @@ def render(snap: Snapshot) -> None:
     if not visible:
         st.info("Nothing matches. Widen the filter, or switch Show to Everything.")
 
+    # Channel tabs: each lead lives in exactly one, keyed off its source, so every
+    # channel's activity reads separately. "Other" catches Google Maps etc.
+    def _channel(p: dict) -> str:
+        s = (p.get("source") or "").lower()
+        if s.startswith("facebook"):
+            return "Facebook"
+        if "linkedin" in s:
+            return "LinkedIn"
+        if "upwork" in s:
+            return "Upwork"
+        if "email" in s or "outreach" in s:
+            return "Email"
+        return "Other"
+
+    CHANNELS = ["Facebook", "Email", "LinkedIn", "Upwork", "Other"]
+    buckets = {c: [p for p in visible if _channel(p) == c] for c in CHANNELS}
+    labels = [f"{c} ({len(buckets[c])})" for c in CHANNELS]
+    chan_tabs = st.tabs(labels)
+
     # ---------------------------------------------------------------------------------
     # Table view: the whole book at a glance, sortable, and exportable for anything the
     # tool does not do yet. No data is trapped in the UI.
@@ -86,113 +105,118 @@ def render(snap: Snapshot) -> None:
                            file_name="growmated-pipeline.csv", mime="text/csv")
         return
 
-    for prospect in visible[:60]:
-        rows = snap.messages_for(prospect["id"])
-        unsent = [m for m in rows if not m.get("sent_at")]
-        awaiting = [m for m in rows if m.get("sent_at") and m.get("replied") is None]
-        status = prospect.get("outreach_status") or "Not Contacted"
+    for chan_tab, channel in zip(chan_tabs, CHANNELS):
+      with chan_tab:
+        subset = buckets[channel]
+        if not subset:
+            st.info(f"No {channel} leads match the current filter.")
+        for prospect in subset[:60]:
+            rows = snap.messages_for(prospect["id"])
+            unsent = [m for m in rows if not m.get("sent_at")]
+            awaiting = [m for m in rows if m.get("sent_at") and m.get("replied") is None]
+            status = prospect.get("outreach_status") or "Not Contacted"
 
-        flag = f"  ·  {len(unsent)} to send" if unsent else (
-            f"  ·  {len(awaiting)} awaiting reply" if awaiting else "")
+            flag = f"  ·  {len(unsent)} to send" if unsent else (
+                f"  ·  {len(awaiting)} awaiting reply" if awaiting else "")
 
-        with st.expander(f"{prospect.get('business_name') or 'Unknown'}  ·  {status}{flag}"):
-            meta = " · ".join(filter(None, [
-                prospect.get("industry"), prospect.get("country_city"),
-                prospect.get("found_in"), prospect.get("source"),
-                prospect.get("email"), (prospect.get("created_at") or "")[:10]]))
-            if prospect.get("post_url"):
-                meta += f' · <a href="{prospect["post_url"]}" target="_blank">original post</a>'
-            st.markdown(
-                pill(status, TONE.get(status, "info"))
-                + (f'  <span style="color:#6B7280;font-size:0.8rem">{meta}</span>' if meta else ""),
-                unsafe_allow_html=True)
-            if prospect.get("notes"):
-                st.caption(prospect["notes"])
-
-            if prospect.get("raw_input"):
-                with st.expander("What they actually posted", expanded=False):
-                    copy_block(prospect["raw_input"], key=f"raw_{prospect['id']}")
-
-            dates = []
-            if prospect.get("date_first_contacted"):
-                dates.append(f"first contacted {prospect['date_first_contacted']}")
-            if prospect.get("next_follow_up_date"):
-                dates.append(f"next follow-up {prospect['next_follow_up_date']}")
-            if dates:
-                st.caption(" · ".join(dates))
-
-            with st.popover("Change status"):
-                statuses = db.OUTREACH_STATUSES
-                new_status = st.selectbox(
-                    "Status", statuses,
-                    index=statuses.index(status) if status in statuses else 0,
-                    key=f"st_{prospect['id']}")
-                if st.button("Save", key=f"stsave_{prospect['id']}"):
-                    try:
-                        db.update_prospect_status(prospect["id"], new_status)
-                        data_mod.refresh()
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Failed: {str(exc)[:200]}")
-
-            if not rows:
-                st.caption("No drafts logged against this lead.")
-                continue
-
-            for msg in rows:
-                sent = bool(msg.get("sent_at"))
-                replied = msg.get("replied")
-                state = "not sent" if not sent else ("replied" if replied else "awaiting reply")
+            with st.expander(f"{prospect.get('business_name') or 'Unknown'}  ·  {status}{flag}"):
+                meta = " · ".join(filter(None, [
+                    prospect.get("industry"), prospect.get("country_city"),
+                    prospect.get("found_in"), prospect.get("source"),
+                    prospect.get("email"), (prospect.get("created_at") or "")[:10]]))
+                if prospect.get("post_url"):
+                    meta += f' · <a href="{prospect["post_url"]}" target="_blank">original post</a>'
                 st.markdown(
-                    f"**{msg.get('channel')}** &nbsp;<span style='color:#6B7280;font-size:0.8rem'>"
-                    f"{state}{' · ' + msg['sent_at'][:10] if sent else ''}</span>",
+                    pill(status, TONE.get(status, "info"))
+                    + (f'  <span style="color:#6B7280;font-size:0.8rem">{meta}</span>' if meta else ""),
                     unsafe_allow_html=True)
-                if msg.get("subject"):
-                    copy_block(msg["subject"], key=f"sub_{msg['id']}")
-                copy_block(msg.get("content") or "", key=f"body_{msg['id']}")
+                if prospect.get("notes"):
+                    st.caption(prospect["notes"])
 
-                if not sent:
-                    if st.button("Mark sent", key=f"sent_{msg['id']}", use_container_width=True):
+                if prospect.get("raw_input"):
+                    with st.expander("What they actually posted", expanded=False):
+                        copy_block(prospect["raw_input"], key=f"raw_{prospect['id']}")
+
+                dates = []
+                if prospect.get("date_first_contacted"):
+                    dates.append(f"first contacted {prospect['date_first_contacted']}")
+                if prospect.get("next_follow_up_date"):
+                    dates.append(f"next follow-up {prospect['next_follow_up_date']}")
+                if dates:
+                    st.caption(" · ".join(dates))
+
+                with st.popover("Change status"):
+                    statuses = db.OUTREACH_STATUSES
+                    new_status = st.selectbox(
+                        "Status", statuses,
+                        index=statuses.index(status) if status in statuses else 0,
+                        key=f"st_{prospect['id']}")
+                    if st.button("Save", key=f"stsave_{prospect['id']}"):
                         try:
-                            db.mark_message_sent(msg["id"])
+                            db.update_prospect_status(prospect["id"], new_status)
                             data_mod.refresh()
                             st.rerun()
                         except Exception as exc:
                             st.error(f"Failed: {str(exc)[:200]}")
+
+                if not rows:
+                    st.caption("No drafts logged against this lead.")
                     continue
 
-                if replied is not None:
-                    bits = [f"replied={replied}"]
-                    if msg.get("days_to_reply") is not None:
-                        bits.append(f"{msg['days_to_reply']}d to reply")
-                    if msg.get("reply_quality"):
-                        bits.append(msg["reply_quality"])
-                    st.caption("Logged: " + ", ".join(bits))
-                    if msg.get("reply_text"):
-                        copy_block(msg["reply_text"], key=f"rep_{msg['id']}")
-                    continue
+                for msg in rows:
+                    sent = bool(msg.get("sent_at"))
+                    replied = msg.get("replied")
+                    state = "not sent" if not sent else ("replied" if replied else "awaiting reply")
+                    st.markdown(
+                        f"**{msg.get('channel')}** &nbsp;<span style='color:#6B7280;font-size:0.8rem'>"
+                        f"{state}{' · ' + msg['sent_at'][:10] if sent else ''}</span>",
+                        unsafe_allow_html=True)
+                    if msg.get("subject"):
+                        copy_block(msg["subject"], key=f"sub_{msg['id']}")
+                    copy_block(msg.get("content") or "", key=f"body_{msg['id']}")
 
-                with st.form(f"out_{msg['id']}"):
-                    got = st.radio("What happened?", ["Replied", "Nothing yet"], horizontal=True)
-                    reply_text = st.text_area(
-                        "Reply text — paste VERBATIM, never summarise", height=90)
-                    c1, c2 = st.columns(2)
-                    quality = c1.selectbox("Reply quality", ["—"] + db.REPLY_QUALITIES)
-                    objection = c2.selectbox("Objection", ["—"] + db.OBJECTION_CATEGORIES)
-                    if st.form_submit_button("Log outcome", use_container_width=True):
-                        is_reply = got == "Replied"
-                        if is_reply and not reply_text.strip():
-                            st.warning("Paste the reply verbatim — the reply text is the gold.")
-                        else:
+                    if not sent:
+                        if st.button("Mark sent", key=f"sent_{msg['id']}", use_container_width=True):
                             try:
-                                db.record_outcome(
-                                    msg["id"], is_reply, reply_text,
-                                    None if quality == "—" else quality,
-                                    None if objection == "—" else objection)
+                                db.mark_message_sent(msg["id"])
                                 data_mod.refresh()
                                 st.rerun()
                             except Exception as exc:
                                 st.error(f"Failed: {str(exc)[:200]}")
+                        continue
 
-    if len(visible) > 60:
-        st.caption(f"Showing the 60 most recent of {len(visible)}. Use search to narrow.")
+                    if replied is not None:
+                        bits = [f"replied={replied}"]
+                        if msg.get("days_to_reply") is not None:
+                            bits.append(f"{msg['days_to_reply']}d to reply")
+                        if msg.get("reply_quality"):
+                            bits.append(msg["reply_quality"])
+                        st.caption("Logged: " + ", ".join(bits))
+                        if msg.get("reply_text"):
+                            copy_block(msg["reply_text"], key=f"rep_{msg['id']}")
+                        continue
+
+                    with st.form(f"out_{msg['id']}"):
+                        got = st.radio("What happened?", ["Replied", "Nothing yet"], horizontal=True)
+                        reply_text = st.text_area(
+                            "Reply text — paste VERBATIM, never summarise", height=90)
+                        c1, c2 = st.columns(2)
+                        quality = c1.selectbox("Reply quality", ["—"] + db.REPLY_QUALITIES)
+                        objection = c2.selectbox("Objection", ["—"] + db.OBJECTION_CATEGORIES)
+                        if st.form_submit_button("Log outcome", use_container_width=True):
+                            is_reply = got == "Replied"
+                            if is_reply and not reply_text.strip():
+                                st.warning("Paste the reply verbatim — the reply text is the gold.")
+                            else:
+                                try:
+                                    db.record_outcome(
+                                        msg["id"], is_reply, reply_text,
+                                        None if quality == "—" else quality,
+                                        None if objection == "—" else objection)
+                                    data_mod.refresh()
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"Failed: {str(exc)[:200]}")
+
+        if len(visible) > 60:
+            st.caption(f"Showing the 60 most recent of {len(visible)}. Use search to narrow.")
