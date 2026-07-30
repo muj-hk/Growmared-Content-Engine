@@ -176,6 +176,11 @@ How to fix each violation type:
     sentences rather than trimming words. Count them. Never cut the concrete detail about the
     prospect, and never cut the sign-off or the postscript.
   - banned phrase: rewrite that sentence in plain, direct English.
+  - opens with a label ("Anchor.", "Hook:"): delete the label so the message starts with a
+    real sentence. Keep the sentence that followed it.
+  - comment only announces a DM: rewrite it to lead with one specific, usable insight about
+    their actual problem (the cause, the fix, the order to do it in). Keep it 2-3 sentences.
+    Mentioning the DM afterwards is fine; mentioning ONLY the DM is not.
   - client has been relabelled: the case study is a PHOTO BOOTH company. Say "photo booth
     company" explicitly. Never describe it as being in the prospect's industry instead.
   - invented client work / invented statistic: DELETE the entire sentence containing it.

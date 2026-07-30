@@ -86,21 +86,62 @@ def get_client():
 # Prospecting
 # --------------------------------------------------------------------------------------
 
-_PLACEHOLDER_NAMES = {"", "unknown", "n/a", "na", "none", "null", "prospect", "not specified"}
+_PLACEHOLDER_NAMES = {
+    "", "unknown", "n/a", "na", "none", "null", "prospect", "not specified",
+    # Group posts are often anonymised; "Anonymous member" is not a name anyone can search.
+    "anonymous", "anonymous member", "anonymous participant", "a member", "member",
+    "facebook user", "linkedin member", "group member",
+}
 
 
 def _label_for(extracted: dict, raw_input: str) -> str:
-    """A row nobody can identify is useless in a 134-row pipeline.
+    """A row nobody can identify is useless in a 139-row pipeline.
 
-    Upwork postings often name no client, so fall back to what the job is actually about
-    rather than writing another "Unknown".
+    Falls back through company -> person -> a SHORT description of what they want. Earlier
+    this pasted the whole intent sentence in, producing names like "Wants to know how to wire
+    GoHighLevel and Housecall Pro together without duplicate records, and whic" — truncated
+    mid-word and impossible to scan.
     """
     for candidate in (extracted.get("company"), extracted.get("name")):
-        if candidate and str(candidate).strip().lower() not in _PLACEHOLDER_NAMES:
-            return str(candidate).strip()[:120]
+        text = str(candidate or "").strip()
+        if text and text.lower() not in _PLACEHOLDER_NAMES:
+            return text[:120]
 
-    fallback = (extracted.get("intent") or raw_input or "").strip()
-    return (fallback[:100] or "Unknown")
+    # No usable name: build a short topic label instead of a truncated sentence.
+    topic = str(extracted.get("intent") or "").strip() or str(raw_input or "").strip()
+    topic = " ".join(topic.split())
+    if not topic:
+        return "Unknown"
+
+    if len(topic) > 58:
+        # Cut at the last word boundary so it never ends mid-word.
+        topic = topic[:58].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
+
+    industry = str(extracted.get("industry") or "").strip()
+    return f"{industry}: {topic}" if industry and industry.lower() not in _PLACEHOLDER_NAMES else topic
+
+
+def _find_existing(client, row: dict) -> str | None:
+    """The id of an existing prospect this one is a repeat of, or None."""
+    from datetime import datetime, timedelta, timezone
+
+    email = (row.get("email") or "").strip()
+    if email:
+        hit = client.table("pipeline").select("id").eq("email", email).limit(1).execute()
+        if hit.data:
+            return hit.data[0]["id"]
+
+    name = (row.get("business_name") or "").strip()
+    if not name or name == "Unknown":
+        return None
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+    hit = (
+        client.table("pipeline").select("id")
+        .eq("business_name", name).eq("source", row.get("source"))
+        .gte("created_at", cutoff).limit(1).execute()
+    )
+    return hit.data[0]["id"] if hit.data else None
 
 
 def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
@@ -118,8 +159,23 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
         "outreach_status": "Not Contacted",
         "notes": extracted.get("intent"),
     }
-    inserted = client.table("pipeline").insert(pipeline_row).execute()
-    pipeline_id = inserted.data[0]["id"]
+    # Same lead pasted twice should not become two rows. Match on email when we have one
+    # (the strongest signal), otherwise on the same name from the same source in the last
+    # 14 days. Reusing the row keeps every draft for that prospect in one place.
+    existing_id = _find_existing(client, pipeline_row)
+    if existing_id:
+        pipeline_id = existing_id
+        # Fill in anything we now know that was blank before, without clobbering good data
+        # or resetting a status the team has already moved on.
+        patch = {
+            key: value for key, value in pipeline_row.items()
+            if value and key in ("email", "industry", "owner_name", "notes")
+        }
+        if patch:
+            client.table("pipeline").update(patch).eq("id", pipeline_id).execute()
+    else:
+        inserted = client.table("pipeline").insert(pipeline_row).execute()
+        pipeline_id = inserted.data[0]["id"]
 
     # One row per channel actually produced, so the log mirrors what the team can send.
     # Intent routing means some of these are legitimately empty and get filtered below.
@@ -282,14 +338,46 @@ def mark_bounced(pipeline_id: str) -> None:
     update_prospect_status(pipeline_id, "Bounced")
 
 
-def mark_message_sent(log_id: str) -> None:
-    """The draft actually went out. Stamps sent_at, which starts the days_to_reply clock."""
+# Marking a message sent should move the prospect's status without anyone remembering to.
+# Nothing here ever downgrades a status the team has already advanced past.
+CHANNEL_STATUS = {
+    "Facebook Comment": "Comment + DM sent",
+    "Facebook DM": "Messaged",
+    "LinkedIn": "Messaged",
+    "Email": "Email sent",
+    "Upwork Proposal": "Proposal sent",
+    "Public Answer": "Messaged",
+    "Thread Reply": "Messaged",
+}
+# Ordered weakest to strongest; a later status is never replaced by an earlier one.
+_STATUS_RANK = {name: i for i, name in enumerate(OUTREACH_STATUSES)}
+
+
+def mark_message_sent(log_id: str, auto_status: bool = True) -> None:
+    """The draft actually went out. Stamps sent_at, which starts the days_to_reply clock,
+    and advances the prospect's status so the pipeline reflects reality on its own."""
     from datetime import datetime, timezone
 
     client = get_client()
     client.table("outreach_log").update(
         {"direction": "sent", "sent_at": datetime.now(timezone.utc).isoformat()}
     ).eq("id", log_id).execute()
+
+    if not auto_status:
+        return
+
+    row = client.table("outreach_log").select("pipeline_id, channel").eq("id", log_id).execute()
+    if not row.data or not row.data[0].get("pipeline_id"):
+        return
+    pipeline_id = row.data[0]["pipeline_id"]
+    target = CHANNEL_STATUS.get(row.data[0].get("channel") or "")
+    if not target:
+        return
+
+    current = client.table("pipeline").select("outreach_status").eq("id", pipeline_id).execute()
+    now_status = (current.data[0].get("outreach_status") if current.data else None) or "Not Contacted"
+    if _STATUS_RANK.get(target, 0) > _STATUS_RANK.get(now_status, 0):
+        client.table("pipeline").update({"outreach_status": target}).eq("id", pipeline_id).execute()
 
 
 def record_outcome(log_id: str, replied: bool, reply_text: str = "",

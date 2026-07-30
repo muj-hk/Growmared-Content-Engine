@@ -24,11 +24,35 @@ PHONE_RE = re.compile(r"(\+\d[\d\s().-]{7,}\d)")
 # Fields that must never carry a link, domain, email address or phone number.
 NO_CONTACT_FIELDS = ("comment", "dm", "email_subject", "email_body", "proposal")
 
+# Structural labels the model writes as a note to itself and then ships. A real DM went out
+# to a prospect opening with "Anchor." Anchored to the very start, so prose that happens to
+# use the word is unaffected.
+LABEL_LEAK_RE = re.compile(
+    r"^\s*(anchor|hook|opener|insight|angle|proof|cta|body|subject|observation|"
+    r"pain[- ]mirror|value|note)\s*[:.\-]\s",
+    re.I,
+)
+
+# A comment whose entire content is "sent you a DM" teaches nobody anything and reads like
+# every other agency in the thread. The comment is the part strangers judge us on.
+DM_ONLY_COMMENT_RE = re.compile(
+    r"^\s*(hey|hi|hello)?[\s,]*[\w' ]{0,22}[\s,]*"
+    r"(just\s+)?(sent|dropped|shot)\s+(you\s+)?(a\s+|an\s+)?(dm|message|pm)\b[\s.!]*$",
+    re.I,
+)
+
 WORD_LIMITS = {
-    "comment": 45,
+    # 45 was set when a comment was just "sent you a DM". Now that a comment must carry a
+    # real insight in 2-3 sentences, 45 forced the repair pass to cut the substance back out.
+    "comment": 62,
     "dm": 80,
     "email_body": 110,
     "proposal": 180,
+    # `answer` and `reply` were originally uncapped, and answers ran to 507 words in
+    # production. A group answer that long does not get read; it also gives away the whole
+    # build for free instead of earning a conversation.
+    "answer": 150,
+    "reply": 90,
 }
 
 SUBJECT_WORD_LIMIT = 8
@@ -184,6 +208,21 @@ def find_violations(fields: dict) -> list[str]:
     subject = fields.get("email_subject") or ""
     if subject and word_count(subject) > SUBJECT_WORD_LIMIT:
         problems.append(f"email_subject is {word_count(subject)} words, limit is {SUBJECT_WORD_LIMIT}")
+
+    # A structural label at the start of any message is a note the model forgot to delete.
+    for name in ("comment", "dm", "email_body", "answer", "reply", "proposal"):
+        text = fields.get(name) or ""
+        leak = LABEL_LEAK_RE.match(text)
+        if leak:
+            problems.append(f'{name} opens with the label "{leak.group(1)}", which is not copy')
+
+    # The comment is what the whole group reads; it has to teach something.
+    comment = (fields.get("comment") or "").strip()
+    if comment and DM_ONLY_COMMENT_RE.match(comment):
+        problems.append(
+            "comment only announces a DM and carries no insight, which is the one thing a "
+            "public comment must do"
+        )
 
     # Deliverability: no links, domains, email addresses or phone numbers in outgoing copy.
     for name in NO_CONTACT_FIELDS:

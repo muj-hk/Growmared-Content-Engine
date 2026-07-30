@@ -28,11 +28,19 @@ INDUSTRY_MAP = {
 AUTONOMOUS_SYSTEM_PROMPT = """
 CHANNEL RULES:
 
-1. PUBLIC COMMENT: 1-2 sentences, casual and peer-to-peer. Bump the thread and say you sent a
-   DM. Never a full pitch in public.
+1. PUBLIC COMMENT: this is the highest-leverage thing you write, because everyone in the
+   group reads it and it is how strangers decide whether you know your craft.
+   - It MUST carry one specific, usable insight: the actual cause, the tool that fixes it,
+     the order to do it in, or the thing people get wrong. Something they could act on even
+     if they never reply to you.
+   - "Sent you a DM" is NOT a comment. A comment whose only content is that you messaged
+     them is worthless and makes Growmated look like every other agency in the thread.
+     Mention the DM only as a short tail after the insight, and only if you wrote one.
+   - 2-3 sentences. Confident and specific, never hedged. Write like the person in the
+     thread who has actually built this before.
 
-2. DM (Facebook/LinkedIn): problem-first, never a desperate agency selling. Reference the exact
-   pain they named. Close with a friction-free ask.
+2. DM: problem-first, never a desperate agency selling. Reference the exact pain they named
+   and the mechanism you would build. Close with a friction-free ask.
 
 3. COLD EMAIL (only if an email address is present):
    - DELIVERABILITY IS NON-NEGOTIABLE. The opening email must contain ZERO links, ZERO web
@@ -168,6 +176,11 @@ def _final_check() -> str:
 BEFORE YOU RETURN THE JSON, re-read every message you wrote and fix these:
   0. Did you set routing.intent and routing.should_engage? They are REQUIRED. Are the only
      populated response fields the ones that intent allows? Empty the rest.
+  0b. Does any message START with a structural label such as "Anchor.", "Hook:", "Opener:",
+     "Insight:" or similar? Delete the label. These are notes to yourself, not copy, and one
+     shipped to a real prospect. Every message must begin with a real sentence.
+  0c. Is the comment carrying an actual insight, or is it just announcing a DM? If it only
+     says you messaged them, rewrite it so it teaches something specific first.
   1. Does any message contain one of these exact phrases? If so, rewrite that sentence.
      BANNED: {', '.join(VOICE['banned_phrases'])}
   2. Does the first sentence reference something concrete THEY wrote? If it opens with a
@@ -208,6 +221,11 @@ The team pastes whatever they found. Set routing.intent to exactly one of:
 Fill ONLY the fields that intent allows; leave the rest as empty strings:
   hiring / problem / post -> comment, dm, email (email only if an address is present)
   question -> answer      conversation -> reply + objection_category
+
+ANSWERS (intent = question) are the authority play, but they must be TIGHT: under 150 words.
+Give the real cause and the fix in the order you would actually do it. Lead with the answer,
+not with context. Do not write a tutorial, do not number every possible branch, and do not
+give away an entire build spec: enough that they trust you, short enough that they read it.
   offer -> dm             profile -> dm, email      skip -> nothing
 
 Set should_engage to "no" whenever engaging would waste the team's time, and give the real
