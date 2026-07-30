@@ -44,7 +44,7 @@ DM_ONLY_COMMENT_RE = re.compile(
 WORD_LIMITS = {
     # 45 was set when a comment was just "sent you a DM". Now that a comment must carry a
     # real insight in 2-3 sentences, 45 forced the repair pass to cut the substance back out.
-    "comment": 62,
+    "comment": 65,
     "dm": 80,
     "email_body": 110,
     "proposal": 180,
@@ -223,6 +223,16 @@ def find_violations(fields: dict) -> list[str]:
             "comment only announces a DM and carries no insight, which is the one thing a "
             "public comment must do"
         )
+
+    # One ask per message. A DM ending in three questions reads as a form and gets none of
+    # them answered. Two allowed in `answer` (a clarifier can be legitimate), one elsewhere.
+    for name, cap in (("dm", 1), ("comment", 1), ("reply", 1), ("email_body", 1), ("answer", 2)):
+        text = fields.get(name) or ""
+        asks = text.count("?")
+        if asks > cap:
+            problems.append(
+                f"{name} asks {asks} questions; one ask per message, or none of them get answered"
+            )
 
     # Deliverability: no links, domains, email addresses or phone numbers in outgoing copy.
     for name in NO_CONTACT_FIELDS:

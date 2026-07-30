@@ -28,14 +28,15 @@ TONE = {
 def render(snap: Snapshot) -> None:
     prospects = snap.prospects
 
-    left, mid, right = st.columns([2, 1, 1])
-    query = left.text_input("Search", placeholder="name, industry, city, or anything they wrote",
+    left, mid, right, viewc = st.columns([2, 1, 1, 1])
+    query = left.text_input("Search", placeholder="name, industry, city, group, or anything they wrote",
                             key="pipe_q", label_visibility="collapsed")
     show = mid.selectbox("Show", ["Needs action", "Open", "Everything"], key="pipe_show",
                          label_visibility="collapsed")
     sources = sorted({p.get("source") for p in prospects if p.get("source")})
     source_filter = right.multiselect("Source", sources, key="pipe_src",
                                       placeholder="Source", label_visibility="collapsed")
+    as_table = viewc.toggle("Table view", key="pipe_table")
 
     def needs_action(p: dict) -> bool:
         rows = snap.messages_for(p["id"])
@@ -55,12 +56,35 @@ def render(snap: Snapshot) -> None:
             p for p in visible
             if q in " ".join(str(p.get(k) or "") for k in
                              ("business_name", "owner_name", "industry", "notes", "email",
-                              "country_city", "raw_input")).lower()
+                              "country_city", "found_in", "raw_input")).lower()
         ]
 
     section(f"{len(visible)} lead{'s' if len(visible) != 1 else ''}", "target")
     if not visible:
         st.info("Nothing matches. Widen the filter, or switch Show to Everything.")
+
+    # ---------------------------------------------------------------------------------
+    # Table view: the whole book at a glance, sortable, and exportable for anything the
+    # tool does not do yet. No data is trapped in the UI.
+    # ---------------------------------------------------------------------------------
+    if as_table:
+        import csv
+        import io
+
+        columns = ["business_name", "owner_name", "outreach_status", "industry",
+                   "country_city", "found_in", "source", "email",
+                   "date_first_contacted", "next_follow_up_date", "created_at"]
+        table = [{c: (p.get(c) or "")[:80] if isinstance(p.get(c), str) else (p.get(c) or "")
+                  for c in columns} for p in visible]
+        st.dataframe(table, use_container_width=True, height=520)
+
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(table)
+        st.download_button("Download CSV", buf.getvalue().encode("utf-8-sig"),
+                           file_name="growmated-pipeline.csv", mime="text/csv")
+        return
 
     for prospect in visible[:60]:
         rows = snap.messages_for(prospect["id"])
@@ -73,8 +97,11 @@ def render(snap: Snapshot) -> None:
 
         with st.expander(f"{prospect.get('business_name') or 'Unknown'}  ·  {status}{flag}"):
             meta = " · ".join(filter(None, [
-                prospect.get("industry"), prospect.get("country_city"), prospect.get("source"),
+                prospect.get("industry"), prospect.get("country_city"),
+                prospect.get("found_in"), prospect.get("source"),
                 prospect.get("email"), (prospect.get("created_at") or "")[:10]]))
+            if prospect.get("post_url"):
+                meta += f' · <a href="{prospect["post_url"]}" target="_blank">original post</a>'
             st.markdown(
                 pill(status, TONE.get(status, "info"))
                 + (f'  <span style="color:#6B7280;font-size:0.8rem">{meta}</span>' if meta else ""),

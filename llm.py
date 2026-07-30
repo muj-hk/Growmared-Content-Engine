@@ -178,6 +178,8 @@ How to fix each violation type:
   - banned phrase: rewrite that sentence in plain, direct English.
   - opens with a label ("Anchor.", "Hook:"): delete the label so the message starts with a
     real sentence. Keep the sentence that followed it.
+  - asks too many questions: keep the single question that most moves this deal forward and
+    turn the others into statements or delete them.
   - comment only announces a DM: rewrite it to lead with one specific, usable insight about
     their actual problem (the cause, the fix, the order to do it in). Keep it 2-3 sentences.
     Mentioning the DM afterwards is fine; mentioning ONLY the DM is not.

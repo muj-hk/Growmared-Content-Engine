@@ -6,6 +6,7 @@ channel strategy below with the brand facts in growmated_knowledge.py, so that f
 stays the single source of truth for positioning, proof, and voice.
 """
 
+from ghl_knowledge import relevant_knowledge
 from growmated_knowledge import (
     BRAND,
     LEAK_LINE,
@@ -16,6 +17,30 @@ from growmated_knowledge import (
     proofs_for,
 )
 from intent import INTENTS, guidance_block
+
+# The sales-decision layer. Every message is read by a real business owner who is being
+# pitched constantly; these are the judgement calls that separate "another agency" from
+# "the person who obviously knows". Kept terse: this ships in every prompt.
+SALES_BRAIN = """
+HOW TO DECIDE, MESSAGE BY MESSAGE (you are talking to one specific human):
+
+  - Diagnose before prescribing. Name what is actually costing them money in THEIR situation
+    before mentioning anything we build. If you cannot name it from what they wrote, ask.
+  - Match the buying temperature. Someone hiring gets a direct plan; someone venting gets
+    help first; someone asking a question gets the answer and nothing else. Pitching a cold
+    reader is how you get ignored; under-asking a hot buyer is how you lose the job.
+  - Exactly ONE next step per message, sized to the temperature: a specific question for
+    cold, a 15-minute audit for warm, times-to-book for hot. Two asks means neither happens.
+  - Never stack more than one question. A message ending in three questions reads as a form.
+  - Specificity is the authority play: a number, a mechanism, a named failure mode from
+    their world. Adjectives ("powerful", "seamless") are what people use when they have no
+    specifics.
+  - Mirror their vocabulary. If they say "jobs", do not say "appointments". If they write
+    casual, write casual.
+  - Short beats complete. Say the one thing that moves this person, cut everything that
+    merely fills space. Value is density, not length.
+  - It is always better to say less than to sound like every other agency in the thread.
+"""
 
 INDUSTRY_MAP = {
     "SaaS": "B2B SaaS platforms needing automated lead qualification and fast sales cycles.",
@@ -90,6 +115,10 @@ OUTREACH_SCHEMA = _obj({
         # Populates pipeline.country_city so the team can filter by geography without
         # re-reading every post.
         "location": _STR,
+        # Where this was found: the group/page/community named or implied in the paste.
+        # This is CRM gold - it tells us which watering holes actually produce clients.
+        "found_in": _STR,
+        "post_url": _STR,
     }),
     # What the team actually pasted, and whether it is worth engaging at all.
     "routing": _obj({
@@ -150,7 +179,9 @@ string when a value is genuinely absent:
         "intent": "One line: what they actually need, in their own framing",
         "email": "Email address if present in the text, else empty string",
         "phone": "Phone number if present in the text, else empty string",
-        "location": "City and/or country if they mention one (e.g. \\"Dallas, TX\\"), else empty string"
+        "location": "City and/or country if they mention one (e.g. \\"Dallas, TX\\"), else empty string",
+        "found_in": "The group, page or community this was posted in, if named or clearly implied (e.g. \\"GoHighLevel W+ Facebook group\\"), else empty string",
+        "post_url": "Any URL to the post/profile itself present in the paste, else empty string"
     },
     "routing": {
         "intent": "REQUIRED. Exactly one of: hiring, problem, question, offer, conversation, profile, post, skip",
@@ -237,8 +268,12 @@ reason. Choosing not to send is a valid, useful output. Never manufacture copy t
 """
 
 
-def build_outreach_system_prompt() -> str:
-    """Full system prompt for the outreach bundle: strategy + brand facts + voice + JSON contract."""
+def build_outreach_system_prompt(input_text: str = "") -> str:
+    """Full system prompt for the outreach bundle.
+
+    input_text lets us inject only the domain knowledge this specific paste touches
+    (ghl_knowledge.relevant_knowledge), so answers are grounded without bloating every call.
+    """
     contact = BRAND["contact"]
     return f"""You are the Autonomous Growth & Strategy Director for {BRAND['name']} ({BRAND['site']}).
 
@@ -283,6 +318,9 @@ VOICE:
 
 BANNED PHRASES — never use these or anything close to them:
 {', '.join(VOICE['banned_phrases'])}
+
+{SALES_BRAIN}
+{relevant_knowledge(input_text)}
 
 {ROUTING_BLOCK}
 
@@ -386,7 +424,7 @@ string when a value is genuinely absent:
 """
 
 
-def build_upwork_system_prompt() -> str:
+def build_upwork_system_prompt(input_text: str = "") -> str:
     """System prompt for Upwork job postings: a single tailored proposal instead of a 3-channel bundle."""
     contact = BRAND["contact"]
     return f"""You are the Autonomous Growth & Strategy Director for {BRAND['name']} ({BRAND['site']}),
@@ -421,6 +459,9 @@ VOICE:
 
 BANNED PHRASES — never use these or anything close:
 {', '.join(VOICE['banned_phrases'])}
+
+{SALES_BRAIN}
+{relevant_knowledge(input_text)}
 
 {BID_GATE}
 

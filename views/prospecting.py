@@ -58,8 +58,10 @@ def _generate(text: str, mode: dict, effort: str, source: str) -> None:
     with st.spinner("Reading it, then writing only what fits..."):
         try:
             client = build_client()
+            # The prompt is built per input so only the domain knowledge this paste touches
+            # gets injected (ghl_knowledge.relevant_knowledge).
             payload, elapsed = generate_json(
-                client, mode["prompt"](), f"RAW TEXT:\n{text}", mode["schema"], effort=effort)
+                client, mode["prompt"](text), f"RAW TEXT:\n{text}", mode["schema"], effort=effort)
 
             responses = normalize_responses(payload.get("responses", {}) or {})
             responses = repair_until_clean(client, responses, mode["repair_schema"])

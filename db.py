@@ -164,6 +164,8 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
         "intent_type": intent,
         # These columns existed but were never populated, so every date field stayed empty.
         "country_city": (extracted.get("location") or "").strip() or None,
+        "found_in": (extracted.get("found_in") or "").strip() or None,
+        "post_url": (extracted.get("post_url") or "").strip() or None,
     }
     # Same lead pasted twice should not become two rows. Match on email when we have one
     # (the strongest signal), otherwise on the same name from the same source in the last
@@ -175,8 +177,8 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
         # or resetting a status the team has already moved on.
         patch = {
             key: value for key, value in pipeline_row.items()
-            if value and key in ("email", "industry", "owner_name", "notes",
-                                 "raw_input", "intent_type", "country_city")
+            if value and key in ("email", "industry", "owner_name", "notes", "raw_input",
+                                 "intent_type", "country_city", "found_in", "post_url")
         }
         if patch:
             client.table("pipeline").update(patch).eq("id", pipeline_id).execute()
