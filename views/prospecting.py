@@ -1,0 +1,209 @@
+"""
+Prospecting — paste anything a prospect wrote, get only what fits.
+
+An intent router classifies the input first (hiring, problem, question, offer, live thread,
+profile, Upwork job, or skip) and produces only the channels that intent calls for. Refusing
+to write is a first-class output: a tool that always produces copy trains the team to send
+copy that should not be sent.
+"""
+
+import json
+
+import streamlit as st
+
+import data as data_mod
+import db
+from context_builder import (
+    OUTREACH_RESPONSES_SCHEMA,
+    OUTREACH_SCHEMA,
+    UPWORK_RESPONSES_SCHEMA,
+    UPWORK_SCHEMA,
+    build_outreach_system_prompt,
+    build_upwork_system_prompt,
+    normalize_proof_id,
+)
+from growmated_knowledge import PROOF_BANK
+from intent import INTENTS
+from llm import (
+    PROVIDER,
+    SPEED_MODES,
+    MissingDependencyError,
+    MissingKeyError,
+    build_client,
+    generate_json,
+    repair_until_clean,
+)
+from quality import normalize_responses
+from ui import copy_block, pill, render_proof_banner, render_quality_warnings, sanitize_text
+
+VALID_PROOF_IDS = {entry["id"] for entry in PROOF_BANK}
+
+MODES = {
+    "Social post / profile": {
+        "key": "social", "prompt": build_outreach_system_prompt,
+        "schema": OUTREACH_SCHEMA, "repair_schema": OUTREACH_RESPONSES_SCHEMA,
+        "placeholder": "Paste a post, profile, question, or a whole thread...",
+        "default_source": "Facebook Post",
+    },
+    "Upwork job post": {
+        "key": "upwork", "prompt": build_upwork_system_prompt,
+        "schema": UPWORK_SCHEMA, "repair_schema": UPWORK_RESPONSES_SCHEMA,
+        "placeholder": "Paste the full Upwork job posting, with budget and skills if shown...",
+        "default_source": "Upwork",
+    },
+}
+
+
+def _generate(text: str, mode: dict, effort: str, source: str) -> None:
+    with st.spinner("Reading it, then writing only what fits..."):
+        try:
+            client = build_client()
+            payload, elapsed = generate_json(
+                client, mode["prompt"](), f"RAW TEXT:\n{text}", mode["schema"], effort=effort)
+
+            responses = normalize_responses(payload.get("responses", {}) or {})
+            responses = repair_until_clean(client, responses, mode["repair_schema"])
+
+            item = {
+                "extracted": payload.get("extracted", {}) or {},
+                "routing": payload.get("routing", {}) or {},
+                "responses": responses, "mode": mode["key"], "raw": text,
+                "saved_id": None, "save_error": None,
+            }
+            st.session_state.last_latency = elapsed
+
+            engage = item["routing"].get("should_engage", "yes") != "no"
+            if st.session_state.get("save_to_db", True) and db.is_configured() and engage:
+                try:
+                    item["saved_id"] = db.save_prospect(
+                        item["extracted"], item["responses"], text, mode["key"], source,
+                        intent=item["routing"].get("intent"))
+                    data_mod.refresh()
+                except Exception as exc:
+                    item["save_error"] = str(exc)[:300]
+
+            st.session_state.prospect_history.append(item)
+            st.rerun()
+
+        except (MissingKeyError, MissingDependencyError) as exc:
+            st.error(f"**Setup needed.** {exc}")
+        except json.JSONDecodeError:
+            st.error("**The model returned invalid JSON.** Usually transient — try again.")
+        except Exception as exc:
+            name = type(exc).__name__
+            status = getattr(exc, "status_code", None)
+            if "InternalServer" in name or (status or 0) >= 500:
+                st.error(f"**The {PROVIDER} endpoint is returning server errors.** Nothing is "
+                         "wrong with your input. Wait a moment and retry.")
+            elif "RateLimit" in name:
+                st.error("**Rate limited by the provider.** Wait a moment and try again.")
+            elif "Timeout" in name:
+                st.error("**The request timed out.** Try again, or switch to Fast.")
+            elif "Authentication" in name or "PermissionDenied" in name:
+                st.error("**The API key was rejected.** Check the provider key in secrets.")
+            else:
+                st.error(f"**Generation failed.** {name}: {str(exc)[:300]}")
+
+
+def render(snap) -> None:
+    if "prospect_history" not in st.session_state:
+        st.session_state.prospect_history = []
+
+    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+    mode_label = c1.selectbox("Input type", list(MODES), label_visibility="collapsed")
+    mode = MODES[mode_label]
+    speed_label = c2.selectbox("Model", list(SPEED_MODES), label_visibility="collapsed")
+    source = c3.selectbox(
+        "Source", db.SOURCES, label_visibility="collapsed",
+        index=db.SOURCES.index(mode["default_source"]) if mode["default_source"] in db.SOURCES else 0)
+    c4.toggle("Save to pipeline", value=True, key="save_to_db")
+
+    if st.session_state.get("last_latency"):
+        st.caption(f"Last generation: {st.session_state.last_latency:.1f}s")
+
+    raw_input = st.chat_input(mode["placeholder"])
+    if raw_input:
+        _generate(sanitize_text(raw_input), mode, SPEED_MODES[speed_label]["effort"], source)
+
+    if not st.session_state.prospect_history:
+        st.info("Paste anything a prospect wrote below. It works out what it is, writes only "
+                "what fits, and tells you when a lead is not worth engaging.")
+        return
+
+    for idx, item in enumerate(reversed(st.session_state.prospect_history)):
+        ext, resp = item["extracted"], item["responses"]
+        routing = item.get("routing", {}) or {}
+        detected = routing.get("intent") or "post"
+        title = ext.get("name") or "Prospect"
+        company = ext.get("company")
+        header = f"{title} · {company}" if company else title
+        label = INTENTS.get(detected, {}).get("label", detected)
+
+        with st.expander(f"{header}  ·  {label}", expanded=(idx == 0)):
+            if routing.get("should_engage") == "no" or detected == "skip":
+                st.warning(f"**Skip this one.** {routing.get('skip_reason') or 'Not a fit.'}")
+
+            left, right = st.columns([3, 2])
+            with left:
+                st.markdown(f"**Need:** {ext.get('intent', 'N/A')}")
+                st.markdown(f"**Industry:** {ext.get('industry', 'N/A')}")
+            with right:
+                for field, lbl in (("email", "Email"), ("phone", "Phone"),
+                                   ("location", "Location"), ("budget", "Budget"),
+                                   ("stack", "Stack")):
+                    if ext.get(field):
+                        st.markdown(f"**{lbl}:** {ext[field]}")
+
+            proof_id = normalize_proof_id(resp.get("proof_used"))
+            render_proof_banner(proof_id, VALID_PROOF_IDS)
+            render_quality_warnings(resp, proof_id)
+
+            if item.get("save_error"):
+                st.warning(f"Draft generated but not saved: {item['save_error']}")
+            elif item.get("saved_id"):
+                st.markdown(pill("Saved to pipeline", "mute", "check"), unsafe_allow_html=True)
+
+            st.divider()
+
+            if item["mode"] == "upwork":
+                bid = (resp.get("bid") or "").lower()
+                writer = {"bid": st.success, "maybe": st.warning, "skip": st.error}.get(bid, st.info)
+                writer(f"**{bid.upper() or 'UNSCORED'}** — {resp.get('bid_reason', '')}")
+                st.caption(f"Fit: {resp.get('fit_score', '?')} · {resp.get('fit_reason', '')}")
+                if resp.get("red_flags"):
+                    st.caption(f"Red flags: {resp['red_flags']}")
+                if resp.get("client_risk"):
+                    st.caption(f"Client's likely worry: {resp['client_risk']}")
+                st.caption("Paste into Upwork:")
+                copy_block(resp.get("proposal", ""), key=f"prop_{idx}")
+                if resp.get("questions_to_ask"):
+                    st.caption("Ask before quoting a number:")
+                    copy_block(resp["questions_to_ask"], key=f"q_{idx}")
+            else:
+                available = [(n, t, c) for n, t, c in (
+                    ("comment", "Comment", "Drop under their post:"),
+                    ("dm", "DM", "Send via Messenger / LinkedIn:"),
+                    ("answer", "Answer", "Post as the answer. No pitch, by design:"),
+                    ("reply", "Reply", "The next message in this thread:"),
+                ) if (resp.get(n) or "").strip()]
+                if (resp.get("email_body") or "").strip():
+                    available.append(("email", "Email", None))
+
+                if not available:
+                    st.info("No copy generated, which is the correct output for a skip.")
+                else:
+                    for tab, (name, _, caption) in zip(
+                            st.tabs([t for _, t, _ in available]), available):
+                        with tab:
+                            if name == "email":
+                                st.caption(f"Send to: **{ext.get('email', 'unknown')}**")
+                                st.text_input("Subject", value=resp.get("email_subject", ""),
+                                              key=f"subj_{idx}")
+                                copy_block(resp.get("email_body", ""), key=f"eb_{idx}")
+                            else:
+                                st.caption(caption)
+                                copy_block(resp.get(name, ""), key=f"{name}_{idx}")
+
+                objection = resp.get("objection_category")
+                if objection and objection != "none":
+                    st.caption(f"Objection detected: **{objection}**")
