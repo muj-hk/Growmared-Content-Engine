@@ -7,6 +7,7 @@ stays the single source of truth for positioning, proof, and voice.
 """
 
 from ghl_knowledge import relevant_knowledge
+from learnings import learned_block
 from growmated_knowledge import (
     BRAND,
     LEAK_LINE,
@@ -321,6 +322,7 @@ BANNED PHRASES — never use these or anything close to them:
 
 {SALES_BRAIN}
 {relevant_knowledge(input_text)}
+{learned_block()}
 
 {ROUTING_BLOCK}
 
@@ -462,6 +464,7 @@ BANNED PHRASES — never use these or anything close:
 
 {SALES_BRAIN}
 {relevant_knowledge(input_text)}
+{learned_block()}
 
 {BID_GATE}
 
