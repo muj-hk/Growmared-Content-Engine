@@ -78,6 +78,10 @@ if st.session_state.get("dark_mode"):
     .stTabs [data-baseweb="tab"] {color:#A0A0AD;}
     .stTabs [aria-selected="true"] {color:#8B8DF0 !important;}
     .gm-pill--mute {background:#161622; color:#A0A0AD; border-color:rgba(255,255,255,0.12);}
+    [data-testid="stExpander"] summary, [data-testid="stExpander"] summary p {color:#ECECF1 !important;}
+    [data-testid="stSidebarHeader"] {background:#12121B !important;}
+    .gm-bar {background:#22222E !important;}
+    hr, [data-testid="stDivider"] {border-color:rgba(255,255,255,0.09) !important;}
     </style>""", unsafe_allow_html=True)
     render_sign_out()
     st.markdown(

@@ -279,7 +279,11 @@ def render_brand() -> None:
     auto page-nav, which pushed the mark ~290px down the sidebar and out of view on short
     screens. st.logo is the supported slot above the nav.
     """
-    wordmark = ASSETS / "growmated-wordmark.svg"
+    # The light wordmark's ink-dark text disappears against a dark sidebar, which is what
+    # made the logo look broken. Pick the variant that matches the active theme.
+    name = "growmated-wordmark-dark.svg" if st.session_state.get("dark_mode") \
+        else "growmated-wordmark.svg"
+    wordmark = ASSETS / name
     if wordmark.exists():
         st.logo(str(wordmark), size="large", icon_image=str(ASSETS / "growmated-icon.svg"))
 
