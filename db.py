@@ -11,7 +11,7 @@ Every function degrades gracefully: if Supabase is unreachable or unconfigured, 
 an explicit failure it can surface, and the tool keeps working in session-only mode.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from config import get_secret
@@ -158,6 +158,12 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
         # Nothing has actually been sent yet - these are drafts until the team marks them sent.
         "outreach_status": "Not Contacted",
         "notes": extracted.get("intent"),
+        # Keep the evidence. Without the original text nobody can check whether a draft is
+        # fair, re-run it, or answer "what did they actually say?" a week later.
+        "raw_input": (raw_input or "").strip() or None,
+        "intent_type": intent,
+        # These columns existed but were never populated, so every date field stayed empty.
+        "country_city": (extracted.get("location") or "").strip() or None,
     }
     # Same lead pasted twice should not become two rows. Match on email when we have one
     # (the strongest signal), otherwise on the same name from the same source in the last
@@ -169,7 +175,8 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
         # or resetting a status the team has already moved on.
         patch = {
             key: value for key, value in pipeline_row.items()
-            if value and key in ("email", "industry", "owner_name", "notes")
+            if value and key in ("email", "industry", "owner_name", "notes",
+                                 "raw_input", "intent_type", "country_city")
         }
         if patch:
             client.table("pipeline").update(patch).eq("id", pipeline_id).execute()
@@ -366,18 +373,47 @@ def mark_message_sent(log_id: str, auto_status: bool = True) -> None:
     if not auto_status:
         return
 
-    row = client.table("outreach_log").select("pipeline_id, channel").eq("id", log_id).execute()
+    row = (
+        client.table("outreach_log")
+        .select("pipeline_id, channel, touch_number").eq("id", log_id).execute()
+    )
     if not row.data or not row.data[0].get("pipeline_id"):
         return
-    pipeline_id = row.data[0]["pipeline_id"]
-    target = CHANNEL_STATUS.get(row.data[0].get("channel") or "")
+    msg_row = row.data[0]
+    pipeline_id = msg_row["pipeline_id"]
+    target = CHANNEL_STATUS.get(msg_row.get("channel") or "")
     if not target:
         return
 
-    current = client.table("pipeline").select("outreach_status").eq("id", pipeline_id).execute()
-    now_status = (current.data[0].get("outreach_status") if current.data else None) or "Not Contacted"
+    current = (
+        client.table("pipeline")
+        .select("outreach_status, date_first_contacted")
+        .eq("id", pipeline_id).execute()
+    )
+    row_now = current.data[0] if current.data else {}
+    now_status = row_now.get("outreach_status") or "Not Contacted"
+
+    # Keep the date columns current without anyone typing a date. touch_number tells us
+    # whether this was the first contact or a follow-up.
+    touch = msg_row.get("touch_number") or 1
+    today = date.today().isoformat()
+    patch: dict = {}
     if _STATUS_RANK.get(target, 0) > _STATUS_RANK.get(now_status, 0):
-        client.table("pipeline").update({"outreach_status": target}).eq("id", pipeline_id).execute()
+        patch["outreach_status"] = target
+    if not row_now.get("date_first_contacted"):
+        patch["date_first_contacted"] = today
+    if touch > 1:
+        patch["last_follow_up_date"] = today
+    # Next follow-up is scheduled from the cadence, so the pipeline shows what is coming.
+    next_offset = FOLLOWUP_OFFSETS.get(touch + 1)
+    if next_offset:
+        first = row_now.get("date_first_contacted") or today
+        patch["next_follow_up_date"] = (
+            date.fromisoformat(first) + timedelta(days=next_offset)
+        ).isoformat()
+
+    if patch:
+        client.table("pipeline").update(patch).eq("id", pipeline_id).execute()
 
 
 def record_outcome(log_id: str, replied: bool, reply_text: str = "",

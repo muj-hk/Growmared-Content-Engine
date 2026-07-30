@@ -102,8 +102,11 @@ if query.strip():
     q = query.lower().strip()
     visible = [
         p for p in visible
+        # Search the original post too: often the only place a tool name, city or budget
+        # appears is in what they wrote, not in the extracted fields.
         if q in " ".join(str(p.get(k) or "") for k in
-                         ("business_name", "owner_name", "industry", "notes", "email")).lower()
+                         ("business_name", "owner_name", "industry", "notes", "email",
+                          "country_city", "raw_input")).lower()
     ]
 
 section(f"{len(visible)} lead{'s' if len(visible) != 1 else ''}", "target")
@@ -132,7 +135,7 @@ for prospect in visible[:60]:
 
     with st.expander(header, expanded=False):
         meta = " · ".join(filter(None, [
-            prospect.get("industry"), prospect.get("source"),
+            prospect.get("industry"), prospect.get("country_city"), prospect.get("source"),
             prospect.get("email"), (prospect.get("created_at") or "")[:10],
         ]))
         st.markdown(
@@ -142,6 +145,20 @@ for prospect in visible[:60]:
         )
         if prospect.get("notes"):
             st.caption(prospect["notes"])
+
+        # The evidence behind every draft on this lead. Collapsed so it never gets in the
+        # way, but always one click from the copy it produced.
+        if prospect.get("raw_input"):
+            with st.expander("What they actually posted", expanded=False):
+                copy_block(prospect["raw_input"], key=f"raw_{prospect['id']}")
+
+        dates = []
+        if prospect.get("date_first_contacted"):
+            dates.append(f"first contacted {prospect['date_first_contacted']}")
+        if prospect.get("next_follow_up_date"):
+            dates.append(f"next follow-up {prospect['next_follow_up_date']}")
+        if dates:
+            st.caption(" · ".join(dates))
 
         # Status is normally automatic; this is the manual override.
         with st.popover("Change status", use_container_width=False):

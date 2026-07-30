@@ -87,6 +87,9 @@ OUTREACH_SCHEMA = _obj({
     "extracted": _obj({
         "name": _STR, "company": _STR, "industry": _STR,
         "intent": _STR, "email": _STR, "phone": _STR,
+        # Populates pipeline.country_city so the team can filter by geography without
+        # re-reading every post.
+        "location": _STR,
     }),
     # What the team actually pasted, and whether it is worth engaging at all.
     "routing": _obj({
@@ -146,7 +149,8 @@ string when a value is genuinely absent:
         "industry": "Industry category",
         "intent": "One line: what they actually need, in their own framing",
         "email": "Email address if present in the text, else empty string",
-        "phone": "Phone number if present in the text, else empty string"
+        "phone": "Phone number if present in the text, else empty string",
+        "location": "City and/or country if they mention one (e.g. \\"Dallas, TX\\"), else empty string"
     },
     "routing": {
         "intent": "REQUIRED. Exactly one of: hiring, problem, question, offer, conversation, profile, post, skip",
