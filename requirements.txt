@@ -1,8 +1,11 @@
-streamlit>=1.30.0
+# Pinned floors, not just names: the app relies on APIs added in specific versions, and
+# changing this file is also what forces Streamlit Cloud to rebuild its environment and
+# re-checkout the source (a stale cached ui.py once broke every page that imported from it).
+streamlit>=1.57          # st.logo (sidebar slot above nav), modern text_area sizing
 python-dotenv>=1.0.0
 supabase>=2.0.0
 
 # Provider SDKs. Both are listed because GROWMATED_PROVIDER switches between them at
 # runtime, so whichever one is missing is the one that breaks in production.
-openai>=1.10.0
-anthropic>=0.120.0
+openai>=1.10.0           # NVIDIA endpoint (OpenAI-compatible)
+anthropic>=0.120.0       # claude-opus-5 with structured outputs
