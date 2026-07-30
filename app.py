@@ -76,7 +76,15 @@ post_queue = [p for p in posts if (p.get("status") or "") not in ("Posted", "Arc
 
 reply_rate = f"{len(replied) / len(sent):.0%}" if sent else "n/a"
 
+try:
+    email_q = db.email_queue(prospects, messages)
+except Exception:
+    email_q = {"send_now": [], "scheduled": [], "awaiting": [], "stopped": 0}
+
 kpi_row([
+    {"label": "Emails due", "value": len(email_q["send_now"]), "icon": "send",
+     "note": f"{len(email_q['scheduled'])} scheduled",
+     "tone": "warn" if email_q["send_now"] else None},
     {"label": "Prospects", "value": len(prospects), "icon": "target",
      "note": f"{len(untouched)} not contacted"},
     {"label": "Drafts ready", "value": len(unsent), "icon": "doc",
@@ -97,6 +105,13 @@ kpi_row([
 section("Do next", "alert")
 
 actions: list[tuple[str, str, str]] = []
+
+if email_q["send_now"]:
+    actions.append((
+        f"<strong>{len(email_q['send_now'])} cold emails are due today</strong> (openers and "
+        "follow-ups whose day has arrived). Open Emails, send from Gmail, mark sent.",
+        "warn", "send",
+    ))
 
 if unsent:
     actions.append((
@@ -156,6 +171,7 @@ with left:
         "Upwork job. It works out what it is, then writes only what fits, or tells you to skip."
     )
     st.page_link("pages/1_Prospecting.py", label="Open Prospecting")
+    st.page_link("pages/5_Emails.py", label="Work the email queue")
     st.page_link("pages/3_Pipeline.py", label="Send and log outcomes")
 
 with right:

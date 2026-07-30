@@ -88,7 +88,7 @@ page_header(
 # Controls
 # ----------------------------------------------------------------------------------------
 with st.sidebar:
-    st.header("Settings")
+    st.markdown('<div class="gm-section" style="margin-top:4px">Settings</div>', unsafe_allow_html=True)
     mode_label = st.radio("Input type", list(MODES), index=0)
     mode = MODES[mode_label]
 

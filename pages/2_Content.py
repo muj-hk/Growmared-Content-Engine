@@ -30,7 +30,7 @@ if not db.is_configured():
     st.stop()
 
 with st.sidebar:
-    st.header("View")
+    st.markdown('<div class="gm-section" style="margin-top:4px">View</div>', unsafe_allow_html=True)
     show_posted = st.toggle("Show posted", value=False)
     show_archived = st.toggle("Show archived", value=False)
     if st.button("Refresh", use_container_width=True):

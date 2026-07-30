@@ -107,7 +107,9 @@ h2 {{ font-size: 1.15rem !important; }}
 h3 {{ font-size: 1rem !important; }}
 
 /* Tighter than Streamlit's default, per the data-dense direction. */
-.block-container {{ max-width: 1240px; padding-top: var(--gm-s4); padding-bottom: var(--gm-s5); }}
+/* Top padding must clear Streamlit's floating toolbar (~3.5rem), or the page title and the
+   first content rows render underneath it: that was the "content overlapping" bug. */
+.block-container {{ max-width: 1240px; padding-top: 3.6rem; padding-bottom: var(--gm-s5); }}
 [data-testid="stVerticalBlock"] {{ gap: var(--gm-s2); }}
 
 /* Numbers must not jitter when they change. */
@@ -172,8 +174,21 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
 }}
 [data-testid="stExpander"] summary {{ font-weight: 600; font-size: 0.92rem; }}
 
+/* Captions render with an overhanging text box at dense gaps and bleed into the next
+   element (caption <> page-link overlap). Give them their own clearance. */
+[data-testid="stCaptionContainer"] {{ padding-bottom: 10px; }}
+[data-testid="stCaptionContainer"] p {{ margin-bottom: 0; line-height: 1.5; }}
+
 [data-testid="stSidebar"] {{ background: var(--gm-bg2); border-right: 1px solid var(--gm-border); }}
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{ gap: var(--gm-s1); }}
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{ gap: var(--gm-s2); }}
+/* Streamlit headings keep a tall box; without this they collide with the control below
+   at dense gaps (the "Settings" / "Input type" overlap). */
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{
+    margin: 0 !important; padding: 0 0 var(--gm-s1) 0 !important; line-height: 1.25 !important;
+    font-size: 0.95rem !important;
+}}
+h1, h2, h3, h4 {{ margin-top: 0 !important; }}
+[data-testid="stHeading"] {{ padding-bottom: 0 !important; }}
 
 /* KPI tile: the dense alternative to a row of st.metric calls. */
 .gm-kpi-row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: var(--gm-s2); }}

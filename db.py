@@ -150,6 +150,7 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
             "proof_used": responses.get("proof_used") or None,
             "word_count": len(str(content).split()),
             "touch_number": 1,
+            "subject": (responses.get("email_subject") or None) if key == "email" else None,
             "template_id": intent or None,  # what the input was classified as
             "objection_category": (
                 responses.get("objection_category")
@@ -193,6 +194,92 @@ def list_messages(pipeline_id: str) -> list[dict]:
 REPLY_QUALITIES = ["interested", "question", "brush-off", "hostile", "scam-probe"]
 OBJECTION_CATEGORIES = ["price", "timing", "have-someone", "distrust", "other"]
 FINAL_OUTCOMES = ["call_booked", "client", "dead"]
+
+
+# Follow-up cadence from the cold-outreach doc: FU1 day +3, FU2 day +7, FU3 day +12,
+# all relative to the OPENING send. touch_number 1 is the opener.
+FOLLOWUP_OFFSETS = {2: 3, 3: 7, 4: 12}
+
+# A sequence stops the moment any of these is true. Sending FU3 to someone who already
+# replied or bounced is how you burn a domain and look like a robot.
+STOP_STATUSES = {"Bounced", "Not Interested", "Call completed", "Negotiating"}
+
+
+def email_queue(prospects_rows: list[dict] | None = None,
+                log_rows: list[dict] | None = None) -> dict:
+    """Everything the team needs to work the cold-email queue, computed fresh.
+
+    Returns {"send_now": [...], "scheduled": [...], "awaiting": [...], "stopped": int}.
+    Each entry is {prospect, message, due_note}. An item lands in send_now when it is an
+    unsent opener, or an unsent follow-up whose offset has elapsed since the opener went out
+    and nobody has replied.
+    """
+    from datetime import datetime, timezone
+
+    if prospects_rows is None or log_rows is None:
+        client = get_client()
+        prospects_rows = client.table("pipeline").select("*").execute().data or []
+        log_rows = (
+            client.table("outreach_log").select("*")
+            .eq("channel", "Email").order("created_at").execute().data or []
+        )
+    prospects = {p["id"]: p for p in prospects_rows}
+    rows = [r for r in log_rows if r.get("channel") == "Email"]
+
+    by_prospect: dict[str, list[dict]] = {}
+    for row in rows:
+        if row.get("pipeline_id"):
+            by_prospect.setdefault(row["pipeline_id"], []).append(row)
+
+    now = datetime.now(timezone.utc)
+    send_now, scheduled, awaiting = [], [], []
+    stopped = 0
+
+    for pid, msgs in by_prospect.items():
+        prospect = prospects.get(pid)
+        if not prospect:
+            continue
+        if (prospect.get("outreach_status") or "") in STOP_STATUSES or any(m.get("replied") for m in msgs):
+            stopped += 1
+            continue
+
+        msgs.sort(key=lambda m: m.get("touch_number") or 1)
+        opener = next((m for m in msgs if (m.get("touch_number") or 1) == 1), None)
+
+        for msg in msgs:
+            touch = msg.get("touch_number") or 1
+            if msg.get("sent_at"):
+                if msg.get("replied") is None:
+                    awaiting.append({"prospect": prospect, "message": msg,
+                                     "due_note": f"touch {touch} sent {msg['sent_at'][:10]}"})
+                continue
+
+            if touch == 1:
+                send_now.append({"prospect": prospect, "message": msg, "due_note": "opener, ready"})
+                continue
+
+            # A follow-up only exists relative to a sent opener.
+            if not (opener and opener.get("sent_at")):
+                scheduled.append({"prospect": prospect, "message": msg,
+                                  "due_note": f"waits for the opener (day +{FOLLOWUP_OFFSETS.get(touch, '?')})"})
+                continue
+
+            opened = datetime.fromisoformat(opener["sent_at"].replace("Z", "+00:00"))
+            days_since = (now - opened).days
+            offset = FOLLOWUP_OFFSETS.get(touch, 99)
+            if days_since >= offset:
+                send_now.append({"prospect": prospect, "message": msg,
+                                 "due_note": f"FU{touch - 1} due (day +{offset}, opener {days_since}d ago)"})
+            else:
+                scheduled.append({"prospect": prospect, "message": msg,
+                                  "due_note": f"FU{touch - 1} due in {offset - days_since}d"})
+
+    return {"send_now": send_now, "scheduled": scheduled, "awaiting": awaiting, "stopped": stopped}
+
+
+def mark_bounced(pipeline_id: str) -> None:
+    """Bounce kills the whole sequence, not just one message."""
+    update_prospect_status(pipeline_id, "Bounced")
 
 
 def mark_message_sent(log_id: str) -> None:
