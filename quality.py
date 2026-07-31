@@ -10,7 +10,7 @@ No streamlit import here on purpose: the UI, the repair pass and the test suite 
 
 import re
 
-from growmated_knowledge import MARKET_MATH, PROOF_BANK, VOICE
+from growmated_knowledge import BRAND, MARKET_MATH, PROOF_BANK, VOICE
 
 PLACEHOLDER_RE = re.compile(r"\[(your name|name|company|x|client|first name)\]", re.I)
 
@@ -92,7 +92,10 @@ def normalize_punctuation(text: str) -> str:
     for bad, good in PUNCTUATION_FIXES.items():
         text = text.replace(bad, good)
     # An em dash replaced mid-sentence can leave a doubled separator.
-    return text.replace(" , ", ", ").replace(",,", ",")
+    text = text.replace(" , ", ", ").replace(",,", ",")
+    # ...and a doubled space, which shipped in real copy. Spaces and tabs only: collapsing
+    # newlines would destroy the email paragraph structure the sign-off rule depends on.
+    return re.sub(r"[ \t]{2,}", " ", text)
 
 
 def normalize_responses(responses: dict) -> dict:
@@ -159,7 +162,10 @@ def find_fabrications(fields: dict, proof_used: str | None) -> list[str]:
         match = _CLIENT_CLAIM_RE.search(blob)
         if match:
             problems.append(
-                f'invented client work ("{match.group(0)}") while claiming proof_used="{proof_used}"'
+                # `or "none"` because a missing value rendered as the Python literal "None"
+                # in text the team reads.
+                f'invented client work ("{match.group(0)}") while claiming '
+                f'proof_used="{proof_used or "none"}"'
             )
     else:
         # Citing a real story is only honest if the client is described accurately. Models
@@ -252,8 +258,14 @@ def find_generic(fields: dict, source_text: str = "") -> list[str]:
     return problems
 
 
-def find_violations(fields: dict) -> list[str]:
-    """fields maps a field name (comment/dm/email_body/proposal/...) to its text."""
+def find_violations(fields: dict, touch: int | None = None) -> list[str]:
+    """fields maps a field name (comment/dm/email_body/proposal/...) to its text.
+
+    touch is the email touch number when known: 1 opener, 2 FU1, 3 FU2, 4 FU3. The handoff
+    spec allows the booking link in FU2 and FU3 only, and follow-ups reply inside the same
+    Gmail thread so only the opener carries the full sign-off. Without it we assume the
+    strictest case (an opener), because that is what the generator produces.
+    """
     problems = []
     blob = " ".join(v for v in fields.values() if v)
     lowered = blob.lower()
@@ -309,6 +321,10 @@ def find_violations(fields: dict) -> list[str]:
         text = fields.get(name) or ""
         if not text:
             continue
+        # FU2 and FU3 are the only messages allowed to carry the booking link. Remove just
+        # that one approved link before checking, so every OTHER link is still caught.
+        if name == "email_body" and (touch or 1) >= 3:
+            text = text.replace(BRAND["contact"]["booking_link"], "")
         if URL_RE.search(text):
             problems.append(f"{name} contains a link, which sends the email to spam")
         elif DOMAIN_RE.search(text):
@@ -328,7 +344,9 @@ def find_violations(fields: dict) -> list[str]:
     if email_body:
         if "\n" not in email_body:
             problems.append("email_body has no line breaks, it will send as one block of text")
-        if not re.search(r"Mujaddad\s*\n+\s*Growmated", email_body):
+        # Follow-ups reply inside the same Gmail thread, so only the opener repeats the
+        # full sign-off. Requiring it on every touch flagged 34 correct follow-ups.
+        if (touch or 1) == 1 and not re.search(r"Mujaddad\s*\n+\s*Growmated", email_body):
             problems.append("email_body is missing the two-line sign-off (Mujaddad / Growmated)")
 
     # A bare id like "accounting" is legitimate English; only a labelled one is a leak.
