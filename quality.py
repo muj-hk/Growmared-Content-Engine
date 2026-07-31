@@ -244,7 +244,11 @@ def find_generic(fields: dict, source_text: str = "") -> list[str]:
     if len(theirs) < 12:
         return problems
 
-    for name in ("comment", "dm", "answer", "reply"):
+    # `reply` is deliberately absent. A comment, DM or public answer must engage with what
+    # they wrote, but a reply inside a live conversation is often transactional ("Tuesday at
+    # 2 works, sending an invite") and legitimately echoes none of their words. Requiring it
+    # there flagged perfectly good replies that no repair pass could honestly fix.
+    for name in ("comment", "dm", "answer"):
         text = fields.get(name) or ""
         if not text:
             continue
