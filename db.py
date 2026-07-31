@@ -395,9 +395,14 @@ def mark_message_sent(log_id: str, auto_status: bool = True) -> None:
     from datetime import datetime, timezone
 
     client = get_client()
-    client.table("outreach_log").update(
+    # `is_("sent_at", "null")` makes this idempotent at the database, not just in the UI: two
+    # fast clicks used to stamp twice, restarting the days_to_reply clock and moving the
+    # follow-up dates for a real business. No match means it was already sent, so stop.
+    updated = client.table("outreach_log").update(
         {"direction": "sent", "sent_at": datetime.now(timezone.utc).isoformat()}
-    ).eq("id", log_id).execute()
+    ).eq("id", log_id).is_("sent_at", "null").execute()
+    if not updated.data:
+        return
 
     if not auto_status:
         return
