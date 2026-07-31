@@ -44,15 +44,17 @@ DM_ONLY_COMMENT_RE = re.compile(
 WORD_LIMITS = {
     # 45 was set when a comment was just "sent you a DM". Now that a comment must carry a
     # real insight in 2-3 sentences, 45 forced the repair pass to cut the substance back out.
-    "comment": 65,
-    "dm": 80,
+    # 65 then let comments drift into paragraphs nobody reads in a feed: 55 is about three
+    # dense sentences, which is the most a stranger will read from an unknown commenter.
+    "comment": 55,
+    "dm": 70,
     "email_body": 110,
     "proposal": 180,
     # `answer` and `reply` were originally uncapped, and answers ran to 507 words in
     # production. A group answer that long does not get read; it also gives away the whole
     # build for free instead of earning a conversation.
-    "answer": 150,
-    "reply": 90,
+    "answer": 120,
+    "reply": 75,
 }
 
 SUBJECT_WORD_LIMIT = 8
@@ -182,6 +184,74 @@ def find_fabrications(fields: dict, proof_used: str | None) -> list[str]:
     return problems
 
 
+# ----------------------------------------------------------------------------------------
+# Sameness. The failure the team notices first is one comment that would fit under any post:
+# the same words under a photo booth thread and a roofing thread. Nothing above catches it,
+# because interchangeable copy breaks no rule - it is simply about nobody.
+# ----------------------------------------------------------------------------------------
+
+# Filler that survives in any context, which is exactly why it says nothing.
+TEMPLATE_PHRASES = [
+    "this is a common issue", "this is a common problem", "this is really common",
+    "you're not alone", "you are not alone", "a lot of people struggle",
+    "most businesses struggle", "many businesses face", "a lot of businesses",
+    "businesses often", "in today's", "at the end of the day", "the good news is",
+    "sounds like a great opportunity", "happy to help", "hope this helps",
+    "hope that helps", "great post", "love this post", "totally agree",
+    "couldn't agree more", "spot on", "this resonates", "feel free to reach out",
+    "curious to hear your thoughts", "would love to learn more", "food for thought",
+]
+
+# Words too common to prove a message was written for this specific prospect.
+_COMMON = {
+    "that", "this", "with", "have", "from", "they", "them", "your", "yours", "ours",
+    "will", "just", "been", "more", "when", "what", "then", "than", "only", "also",
+    "some", "into", "over", "most", "like", "need", "needs", "want", "wants", "know",
+    "make", "makes", "does", "doing", "said", "says", "well", "work", "works",
+    "working", "thing", "things", "really", "would", "could", "should", "about",
+    "there", "their", "which", "because", "still", "after", "before", "every",
+    "other", "right", "thanks", "thank", "please", "sure", "going", "getting",
+    "business", "businesses", "company", "companies", "help", "helping", "looking",
+    "anyone", "someone", "something", "anything", "guys", "here", "were", "much",
+    "even", "back", "down", "time", "times", "week", "month", "year", "using", "used",
+}
+
+
+def _distinctive(text: str) -> set[str]:
+    """Words specific enough that sharing them proves the copy engaged with the source."""
+    return {w for w in re.findall(r"[a-z]{4,}", (text or "").lower()) if w not in _COMMON}
+
+
+def find_generic(fields: dict, source_text: str = "") -> list[str]:
+    """Copy that could be pasted under any post, judged against what they actually wrote."""
+    problems = []
+    loose = _loose(" ".join(v for v in fields.values() if isinstance(v, str) and v))
+
+    for phrase in TEMPLATE_PHRASES:
+        if _loose(phrase) in loose:
+            problems.append(
+                f'template filler "{phrase}" - it fits any post, so it says nothing about theirs'
+            )
+
+    # Needs a real post to compare against: a two-line "DM me" gives nothing to echo.
+    theirs = _distinctive(source_text)
+    if len(theirs) < 12:
+        return problems
+
+    for name in ("comment", "dm", "answer", "reply"):
+        text = fields.get(name) or ""
+        if not text:
+            continue
+        shared = _distinctive(text) & theirs
+        if len(shared) < 2:
+            problems.append(
+                f"{name} could be pasted under any post: it picks up nothing specific from "
+                "what this person actually wrote"
+            )
+
+    return problems
+
+
 def find_violations(fields: dict) -> list[str]:
     """fields maps a field name (comment/dm/email_body/proposal/...) to its text."""
     problems = []
@@ -271,9 +341,29 @@ def find_violations(fields: dict) -> list[str]:
 
 
 def repairable_fields(responses: dict) -> dict:
-    """The text fields worth checking and repairing."""
+    """The text fields worth checking and repairing.
+
+    `answer` and `reply` were missing here, which quietly disabled every rule written for
+    them: their word limits and question caps were computed and then never applied, because
+    nothing ever handed those fields to find_violations. Group answers ran long for exactly
+    that reason.
+    """
     return {
         key: responses.get(key)
-        for key in ("comment", "dm", "email_subject", "email_body", "proposal", "opening_question")
+        for key in ("comment", "dm", "email_subject", "email_body", "proposal",
+                    "opening_question", "answer", "reply")
         if responses.get(key)
     }
+
+
+def final_check(responses: dict, source_text: str = "",
+                proof_used: str | None = None) -> list[str]:
+    """The one gate every message passes before a human is allowed to see it.
+
+    House style, fabrication and sameness in a single call, so no caller can accidentally
+    run two of the three. Empty list means the copy is fit to send.
+    """
+    fields = repairable_fields(responses)
+    return (find_violations(fields)
+            + find_fabrications(fields, proof_used)
+            + find_generic(fields, source_text))

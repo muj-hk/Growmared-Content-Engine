@@ -41,6 +41,22 @@ HOW TO DECIDE, MESSAGE BY MESSAGE (you are talking to one specific human):
   - Short beats complete. Say the one thing that moves this person, cut everything that
     merely fills space. Value is density, not length.
   - It is always better to say less than to sound like every other agency in the thread.
+
+HARD RULES. These are checked after you write, and broken copy is sent back for revision:
+
+  1. THE TRANSPLANT TEST. Before you return anything, ask: could this exact text be pasted
+     under a different business in a different industry and still make sense? If yes, it has
+     failed. Rewrite it around something only THIS person would recognise: the tool they
+     named, the symptom they described, their trade, their own words for it.
+  2. Every message must carry at least one concrete thing lifted from what they actually
+     wrote, not a paraphrase of their problem in your vocabulary.
+  3. NEVER open with filler that fits any post: "This is a common issue", "You're not alone",
+     "Most businesses struggle with this", "Great post". Open with the observation itself.
+  4. Comment: 2-3 sentences, under 55 words, carrying one usable insight (the cause, the fix,
+     or the order to do it in). Worth reading even by someone who never contacts us.
+  5. DM: under 70 words, exactly one question, one clear next step.
+  6. Short and specific beats long and thorough. Any sentence not doing work for this
+     particular person gets cut before you return the JSON.
 """
 
 INDUSTRY_MAP = {

@@ -191,6 +191,12 @@ How to fix each violation type:
   - invented client work / invented statistic: DELETE the entire sentence containing it.
     Do not replace it with a different client or a different number. It is always better to
     say less than to claim something that did not happen.
+  - template filler: delete the filler phrase and replace it with something true only of
+    THIS prospect. "This is a common issue" becomes the actual cause in their setup.
+  - could be pasted under any post: rewrite it around the specific thing they described,
+    using their own words for it (their trade, their tool, the symptom they named). If you
+    cannot name something specific from their post, the message is too vague to send: cut it
+    down to the one concrete observation you can genuinely make.
   - sign-off / no line breaks: rewrite email_body with real newline characters. Short
     paragraphs separated by a blank line, then a blank line, then "Mujaddad" on its own line,
     then "Growmated" on its own line, then a blank line, then the "P.S." line if present.
@@ -198,34 +204,33 @@ How to fix each violation type:
 Return the corrected JSON object with exactly the same keys as the input, and nothing else."""
 
 
-def repair_until_clean(client, responses: dict, schema: dict, max_passes: int = 2) -> dict:
-    """Normalize, then repair repeatedly until the copy is clean or we stop making progress.
+def repair_until_clean(client, responses: dict, schema: dict, max_passes: int = 3,
+                       source_text: str = "") -> dict:
+    """Generate, check, revise, check again. Nothing reaches a human until it passes.
 
     One pass is not always enough: a 148-word email came back at 123 against a 110 limit,
     because the model trims rather than cuts. Bounded at max_passes so a stubborn violation
     cannot loop forever, and stops early if a pass fixes nothing.
 
+    source_text is the prospect's own post, needed for the sameness check: without it we can
+    tell whether copy is well-formed, but not whether it was written for THIS person.
+
     quality is imported here rather than at module scope to keep llm.py importable from
     scripts that do not need the guard layer.
     """
-    from quality import find_fabrications, find_violations, normalize_responses, repairable_fields
+    from quality import final_check, normalize_responses
 
     from context_builder import normalize_proof_id
 
     current = normalize_responses(responses)
     for _ in range(max_passes):
-        fields = repairable_fields(current)
-        problems = find_violations(fields) + find_fabrications(
-            fields, normalize_proof_id(current.get("proof_used"))
-        )
+        problems = final_check(current, source_text, normalize_proof_id(current.get("proof_used")))
         if not problems:
             return current
 
         repaired = normalize_responses(repair_copy(client, current, problems, schema))
-        repaired_fields = repairable_fields(repaired)
-        remaining = find_violations(repaired_fields) + find_fabrications(
-            repaired_fields, normalize_proof_id(repaired.get("proof_used"))
-        )
+        remaining = final_check(repaired, source_text,
+                                normalize_proof_id(repaired.get("proof_used")))
         # No improvement means another identical pass will not help either.
         if len(remaining) >= len(problems):
             return repaired

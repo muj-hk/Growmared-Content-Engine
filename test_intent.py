@@ -13,8 +13,8 @@ from context_builder import (
     build_outreach_system_prompt,
     normalize_proof_id,
 )
-from llm import MODEL, build_client, generate_json, repair_copy
-from quality import find_fabrications, find_violations, normalize_responses, repairable_fields
+from llm import MODEL, build_client, generate_json, repair_until_clean
+from quality import final_check, normalize_responses
 
 FIXTURES = [
     {
@@ -91,15 +91,14 @@ def main() -> int:
         routing = payload.get("routing", {}) or {}
         responses = normalize_responses(payload.get("responses", {}) or {})
 
-        # Mirror the app exactly: normalize, then repair anything that broke house style.
-        # Checking raw output would fail on word limits the app silently fixes.
-        pre = repairable_fields(responses)
-        pre_problems = find_violations(pre) + find_fabrications(
-            pre, normalize_proof_id(responses.get("proof_used"))
-        )
+        # Mirror the app exactly: normalize, then revise until clean. This used to run a
+        # SINGLE repair pass while the app ran the full loop, so the test failed on copy the
+        # app would have fixed (an answer one word over the limit).
+        pre_problems = final_check(responses, fx["text"], normalize_proof_id(responses.get("proof_used")))
         if pre_problems:
             print(f"  repairing: {len(pre_problems)} -> {pre_problems}")
-            responses = repair_copy(client, responses, pre_problems, OUTREACH_RESPONSES_SCHEMA)
+            responses = repair_until_clean(client, responses, OUTREACH_RESPONSES_SCHEMA,
+                                           source_text=fx["text"])
         detected = routing.get("intent")
         engage = routing.get("should_engage")
         produced = [k for k in ("comment", "dm", "email_body", "answer", "reply") if (responses.get(k) or "").strip()]
@@ -127,10 +126,9 @@ def main() -> int:
             if got not in fx["expect_objection"]:
                 problems.append(f"objection {got!r} not in {sorted(fx['expect_objection'])}")
 
-        # House style and fabrication still apply to whatever it did produce.
-        fields = repairable_fields(responses)
-        problems += find_violations(fields)
-        problems += find_fabrications(fields, normalize_proof_id(responses.get("proof_used")))
+        # House style, fabrication and sameness all apply to whatever it did produce.
+        problems += final_check(responses, fx["text"],
+                                normalize_proof_id(responses.get("proof_used")))
 
         if problems:
             failures += len(problems)

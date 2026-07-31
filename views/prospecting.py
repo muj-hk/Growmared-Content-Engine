@@ -64,7 +64,10 @@ def _generate(text: str, mode: dict, effort: str, source: str) -> None:
                 client, mode["prompt"](text), f"RAW TEXT:\n{text}", mode["schema"], effort=effort)
 
             responses = normalize_responses(payload.get("responses", {}) or {})
-            responses = repair_until_clean(client, responses, mode["repair_schema"])
+            # The gate: check the copy against their actual post, revise, check again.
+            # Nothing reaches the team until it passes or revision stops helping.
+            responses = repair_until_clean(client, responses, mode["repair_schema"],
+                                           source_text=text)
 
             item = {
                 "extracted": payload.get("extracted", {}) or {},
@@ -161,7 +164,7 @@ def render(snap) -> None:
 
             proof_id = normalize_proof_id(resp.get("proof_used"))
             render_proof_banner(proof_id, VALID_PROOF_IDS)
-            render_quality_warnings(resp, proof_id)
+            render_quality_warnings(resp, proof_id, item.get("raw", ""))
 
             if item.get("save_error"):
                 st.warning(f"Draft generated but not saved: {item['save_error']}")
@@ -227,7 +230,8 @@ def render(snap) -> None:
                             new_text = repair_until_clean(client, {
                                 **resp, target:
                                 f"REVISE PER TEAM NOTE ({ask.strip()}):\n{resp[target]}"},
-                                mode["repair_schema"]).get(target, resp[target])
+                                mode["repair_schema"],
+                                source_text=item.get("raw", "")).get(target, resp[target])
                             resp[target] = new_text
                             if item.get("saved_id"):
                                 label = db.CHANNEL_LABELS.get(

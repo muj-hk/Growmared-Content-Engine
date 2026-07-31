@@ -20,7 +20,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from quality import find_fabrications, find_violations, repairable_fields
+from quality import find_fabrications, find_generic, find_violations, repairable_fields
 
 ASSETS = Path(__file__).parent / "assets"
 
@@ -450,8 +450,9 @@ def render_proof_banner(proof_used: str, valid_ids: set[str]) -> None:
         )
 
 
-def render_quality_warnings(responses: dict, proof_used: str | None = None) -> None:
-    """Anything that survived the repair pass, so nobody sends generic or invented copy."""
+def render_quality_warnings(responses: dict, proof_used: str | None = None,
+                            source_text: str = "") -> None:
+    """Anything that survived the revision passes, so nobody sends generic or invented copy."""
     fields = repairable_fields(responses)
 
     fabrications = find_fabrications(fields, proof_used)
@@ -460,6 +461,14 @@ def render_quality_warnings(responses: dict, proof_used: str | None = None) -> N
             "**Do not send.** This copy invents something: "
             + "; ".join(fabrications)
             + ". Delete the invented claim or regenerate."
+        )
+
+    # Sameness gets its own warning: this copy is well-formed, it is just about nobody.
+    generic = find_generic(fields, source_text)
+    if generic:
+        st.warning(
+            "**Reads like a template.** " + "; ".join(generic)
+            + ". Regenerate, or open Revise a message and ask for their specific situation."
         )
 
     problems = find_violations(fields)
