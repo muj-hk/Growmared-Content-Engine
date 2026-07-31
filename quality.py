@@ -356,6 +356,43 @@ def repairable_fields(responses: dict) -> dict:
     }
 
 
+def excess_words(fields: dict) -> int:
+    """How far over the limits the copy is, in total words.
+
+    Lets the repair loop see that a 147 -> 123 word pass made real progress even though the
+    problem COUNT did not change. Counting problems alone made the loop quit after one
+    attempt on exactly the violation that needs several.
+    """
+    return sum(max(0, word_count(fields.get(name)) - limit)
+               for name, limit in WORD_LIMITS.items())
+
+
+def trim_to_limit(text: str, limit: int) -> str:
+    """Drop whole trailing sentences until the text is under the limit.
+
+    Deterministic backstop for `answer`, which is the field the model overruns most (507
+    words once, and still 132 after three revision passes). A group answer's last sentence
+    is a closer, not the substance, so cutting from the end keeps what matters. Never used
+    on dm or email_body, where the final lines carry the ask and the sign-off.
+    """
+    if word_count(text) <= limit:
+        return text
+    kept: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+", (text or "").strip()):
+        if word_count(" ".join(kept + [part])) > limit:
+            break
+        kept.append(part)
+    return " ".join(kept) if kept else text
+
+
+def enforce_hard_limits(responses: dict) -> dict:
+    """Last line of defence: no over-long answer ever reaches a human."""
+    answer = responses.get("answer")
+    if answer and word_count(answer) > WORD_LIMITS["answer"]:
+        return {**responses, "answer": trim_to_limit(answer, WORD_LIMITS["answer"])}
+    return responses
+
+
 def final_check(responses: dict, source_text: str = "",
                 proof_used: str | None = None) -> list[str]:
     """The one gate every message passes before a human is allowed to see it.

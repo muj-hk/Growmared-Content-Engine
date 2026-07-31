@@ -218,25 +218,36 @@ def repair_until_clean(client, responses: dict, schema: dict, max_passes: int = 
     quality is imported here rather than at module scope to keep llm.py importable from
     scripts that do not need the guard layer.
     """
-    from quality import final_check, normalize_responses
+    from quality import (
+        enforce_hard_limits,
+        excess_words,
+        final_check,
+        normalize_responses,
+        repairable_fields,
+    )
 
     from context_builder import normalize_proof_id
 
     current = normalize_responses(responses)
+    previous_severity = None
+
     for _ in range(max_passes):
         problems = final_check(current, source_text, normalize_proof_id(current.get("proof_used")))
         if not problems:
             return current
 
-        repaired = normalize_responses(repair_copy(client, current, problems, schema))
-        remaining = final_check(repaired, source_text,
-                                normalize_proof_id(repaired.get("proof_used")))
-        # No improvement means another identical pass will not help either.
-        if len(remaining) >= len(problems):
-            return repaired
-        current = repaired
+        # Progress is problem count AND how far over the limits we still are. Counting
+        # problems alone made the loop quit after one attempt on a stubborn word limit,
+        # because trimming 132 -> 126 words leaves the count unchanged while clearly working.
+        severity = len(problems) * 1000 + excess_words(repairable_fields(current))
+        if previous_severity is not None and severity >= previous_severity:
+            break
+        previous_severity = severity
 
-    return current
+        current = normalize_responses(repair_copy(client, current, problems, schema))
+
+    # The model had its chances; the length rule is not negotiable.
+    return enforce_hard_limits(current)
 
 
 def repair_copy(client, responses: dict, violations: list[str], schema: dict,
