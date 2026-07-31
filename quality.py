@@ -490,13 +490,18 @@ def enforce_hard_limits(responses: dict) -> dict:
 
 
 def final_check(responses: dict, source_text: str = "",
-                proof_used: str | None = None) -> list[str]:
+                proof_used: str | None = None, touch: int | None = None) -> list[str]:
     """The one gate every message passes before a human is allowed to see it.
 
     House style, fabrication and sameness in a single call, so no caller can accidentally
     run two of the three. Empty list means the copy is fit to send.
+
+    touch passes straight through to find_violations. Without it the gate judged every email
+    as an opener, so the touch-aware fix never actually reached the gate and 34 correct
+    follow-ups would still have been flagged. Generation leaves it None, which is right:
+    the generator only ever writes openers.
     """
     fields = repairable_fields(responses)
-    return (find_violations(fields)
+    return (find_violations(fields, touch)
             + find_fabrications(fields, proof_used)
             + find_generic(fields, source_text))
