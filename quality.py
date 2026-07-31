@@ -356,6 +356,84 @@ def repairable_fields(responses: dict) -> dict:
     }
 
 
+# ----------------------------------------------------------------------------------------
+# Repetition, in both directions:
+#   - the same POST submitted twice (human error), which should not cost a generation
+#   - two different posts producing the same SENTENCES (model error), which is what a
+#     prospect would actually notice if they compared notes with someone in the same group
+# ----------------------------------------------------------------------------------------
+
+# Approved proof claims must be quoted accurately every time, so their repetition is correct
+# by design and must never be counted as the model repeating itself.
+_PROOF_TEXT = _loose(" ".join(entry["claim"] for entry in PROOF_BANK))
+
+
+def _sentences(text: str) -> list[str]:
+    """Sentences long enough that reuse is meaningful. Short ones repeat innocently."""
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", (text or "").strip())
+            if len(s.split()) >= 6]
+
+
+def _trigrams(text: str) -> set[tuple]:
+    words = re.findall(r"[a-z']+", (text or "").lower())
+    return {tuple(words[i:i + 3]) for i in range(len(words) - 2)}
+
+
+def similarity(first: str, second: str) -> float:
+    """Overlap of three-word phrases. 1.0 is identical, under 0.1 is unrelated."""
+    a, b = _trigrams(first), _trigrams(second)
+    return len(a & b) / len(a | b) if (a | b) else 0.0
+
+
+DUPLICATE_INPUT_THRESHOLD = 0.55
+
+
+def find_duplicate_input(text: str, prospects: list[dict]) -> dict | None:
+    """The same post pasted twice. Returns the earlier lead, or None.
+
+    Threshold is deliberately loose: a re-paste usually loses or gains a line, and the cost
+    of a false positive is one extra click, while the cost of a miss is a duplicate lead and
+    a wasted generation.
+    """
+    if len(text.split()) < 12:
+        return None
+    best, score = None, 0.0
+    for prospect in prospects[:200]:
+        previous = prospect.get("raw_input") or ""
+        if len(previous.split()) < 12:
+            continue
+        current = similarity(text, previous)
+        if current > score:
+            best, score = prospect, current
+    return best if score >= DUPLICATE_INPUT_THRESHOLD else None
+
+
+def find_repetition(fields: dict, recent: list[dict]) -> list[str]:
+    """Sentences this copy reuses from messages already written for someone else.
+
+    Exact sentence reuse rather than a similarity score, because it is unambiguous, it is
+    what a reader would actually spot, and it can be quoted back to the team.
+    """
+    problems = []
+    for name in ("comment", "dm"):
+        mine = [s for s in _sentences(fields.get(name) or "")
+                if _loose(s) not in _PROOF_TEXT]
+        if not mine:
+            continue
+        for message in recent:
+            other = _loose(message.get("content") or "")
+            if not other:
+                continue
+            reused = next((s for s in mine if _loose(s) in other), None)
+            if reused:
+                who = message.get("business") or "another prospect"
+                problems.append(
+                    f'{name} reuses a sentence already sent to {who}: "{reused[:70]}..."'
+                )
+                break  # one flag per field is enough to trigger a rewrite
+    return problems
+
+
 def excess_words(fields: dict) -> int:
     """How far over the limits the copy is, in total words.
 

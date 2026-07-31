@@ -31,9 +31,15 @@ from llm import (
     MissingKeyError,
     build_client,
     generate_json,
+    repair_copy,
     repair_until_clean,
 )
-from quality import normalize_responses
+from quality import (
+    find_duplicate_input,
+    find_repetition,
+    normalize_responses,
+    repairable_fields,
+)
 from ui import copy_block, pill, render_proof_banner, render_quality_warnings, sanitize_text
 
 VALID_PROOF_IDS = {entry["id"] for entry in PROOF_BANK}
@@ -69,11 +75,23 @@ def _generate(text: str, mode: dict, effort: str, source: str) -> None:
             responses = repair_until_clean(client, responses, mode["repair_schema"],
                                            source_text=text)
 
+            # Then check it against what we have already sent other people. Copy can be
+            # specific to this prospect and still be a sentence someone else received.
+            snap_now = data_mod.load()
+            names = {p["id"]: p.get("business_name") for p in snap_now.prospects}
+            recent = [{"content": m.get("content"), "business": names.get(m.get("pipeline_id"))}
+                      for m in snap_now.messages[:150] if m.get("content")]
+            repeats = find_repetition(repairable_fields(responses), recent)
+            if repeats:
+                responses = normalize_responses(
+                    repair_copy(client, responses, repeats, mode["repair_schema"]))
+                repeats = find_repetition(repairable_fields(responses), recent)
+
             item = {
                 "extracted": payload.get("extracted", {}) or {},
                 "routing": payload.get("routing", {}) or {},
                 "responses": responses, "mode": mode["key"], "raw": text,
-                "saved_id": None, "save_error": None,
+                "saved_id": None, "save_error": None, "repeats": repeats,
             }
             st.session_state.last_latency = elapsed
 
@@ -129,9 +147,42 @@ def render(snap) -> None:
     if st.session_state.get("last_latency"):
         st.caption(f"Last generation: {st.session_state.last_latency:.1f}s")
 
+    effort = SPEED_MODES[speed_label]["effort"]
+
     raw_input = st.chat_input(mode["placeholder"])
     if raw_input:
-        _generate(sanitize_text(raw_input), mode, SPEED_MODES[speed_label]["effort"], source)
+        text = sanitize_text(raw_input)
+        # Same post pasted twice is a human error, not a generation request. Catch it before
+        # spending a call and before creating a second lead for one business.
+        duplicate = find_duplicate_input(text, snap.prospects)
+        if duplicate:
+            st.session_state.dup_pending = {
+                "text": text, "mode": mode_label, "effort": effort,
+                "source": source, "lead": duplicate,
+            }
+            st.rerun()
+        _generate(text, mode, effort, source)
+
+    pending = st.session_state.get("dup_pending")
+    if pending:
+        lead = pending["lead"]
+        when = (lead.get("created_at") or "")[:10]
+        st.warning(
+            f"**This looks like a post you already ran.** "
+            f"{lead.get('business_name') or 'A lead'} was generated on {when or 'an earlier date'}. "
+            "The drafts below are the ones you already have."
+        )
+        for msg in snap.messages_for(lead["id"])[:2]:
+            st.caption(f"{msg.get('channel')} — already written")
+            copy_block(msg.get("content") or "", key=f"dup_{msg['id']}")
+
+        keep, regen = st.columns(2)
+        if keep.button("Keep the existing drafts", use_container_width=True):
+            st.session_state.pop("dup_pending", None)
+            st.rerun()
+        if regen.button("Write a fresh version anyway", use_container_width=True):
+            saved = st.session_state.pop("dup_pending")
+            _generate(saved["text"], MODES[saved["mode"]], saved["effort"], saved["source"])
 
     if not st.session_state.prospect_history:
         st.info("Paste anything a prospect wrote below. It works out what it is, writes only "
@@ -165,6 +216,11 @@ def render(snap) -> None:
             proof_id = normalize_proof_id(resp.get("proof_used"))
             render_proof_banner(proof_id, VALID_PROOF_IDS)
             render_quality_warnings(resp, proof_id, item.get("raw", ""))
+            if item.get("repeats"):
+                st.warning(
+                    "**Repeats copy sent to someone else.** " + "; ".join(item["repeats"])
+                    + ". Rewrite that line before sending."
+                )
 
             if item.get("save_error"):
                 st.warning(f"Draft generated but not saved: {item['save_error']}")

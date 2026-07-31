@@ -235,7 +235,10 @@ def list_prospects(limit: int = 50) -> list[dict]:
     client = get_client()
     result = (
         client.table("pipeline")
-        .select("id, business_name, owner_name, email, industry, source, outreach_status, notes, created_at")
+        # An explicit column list silently drops anything added later: raw_input, found_in
+        # and post_url were all invisible to every caller of this function, which made the
+        # stored posts look like they had never been saved at all.
+        .select("*")
         .order("created_at", desc=True)
         .limit(limit)
         .execute()

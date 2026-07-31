@@ -191,6 +191,10 @@ How to fix each violation type:
   - invented client work / invented statistic: DELETE the entire sentence containing it.
     Do not replace it with a different client or a different number. It is always better to
     say less than to claim something that did not happen.
+  - reuses a sentence already sent to someone else: that exact sentence has gone out to a
+    different prospect, so rewrite it completely. Do not reword it slightly. Say the thing
+    that is true of THIS prospect's setup instead, using their own words for it. The approved
+    client result is the one exception and may stay as it is written.
   - template filler: delete the filler phrase and replace it with something true only of
     THIS prospect. "This is a common issue" becomes the actual cause in their setup.
   - could be pasted under any post: rewrite it around the specific thing they described,
