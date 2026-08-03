@@ -8,6 +8,7 @@ copy that should not be sent.
 """
 
 import json
+from uuid import uuid4
 
 import streamlit as st
 
@@ -92,6 +93,8 @@ def _generate(text: str, mode: dict, effort: str, source: str) -> None:
                 "routing": payload.get("routing", {}) or {},
                 "responses": responses, "mode": mode["key"], "raw": text,
                 "saved_id": None, "save_error": None, "repeats": repeats,
+                # Stable per result, so widget keys never collide across generations.
+                "uid": uuid4().hex[:8],
             }
             st.session_state.last_latency = elapsed
 
@@ -190,6 +193,12 @@ def render(snap) -> None:
         return
 
     for idx, item in enumerate(reversed(st.session_state.prospect_history)):
+        # Widget keys MUST be stable per result, never positional. The list is reversed, so
+        # the newest result is always idx 0 - and a Streamlit widget that already holds a
+        # value for its key IGNORES a new `value=`. Keying on idx meant the copy box kept
+        # showing the PREVIOUS lead's DM while the database held the new one, which is exactly
+        # the bug the team worked around by refreshing and reading Pipeline instead.
+        uid = item.get("uid") or f"i{idx}"
         ext, resp = item["extracted"], item["responses"]
         routing = item.get("routing", {}) or {}
         detected = routing.get("intent") or "post"
@@ -239,10 +248,10 @@ def render(snap) -> None:
                 if resp.get("client_risk"):
                     st.caption(f"Client's likely worry: {resp['client_risk']}")
                 st.caption("Paste into Upwork:")
-                copy_block(resp.get("proposal", ""), key=f"prop_{idx}")
+                copy_block(resp.get("proposal", ""), key=f"prop_{uid}")
                 if resp.get("questions_to_ask"):
                     st.caption("Ask before quoting a number:")
-                    copy_block(resp["questions_to_ask"], key=f"q_{idx}")
+                    copy_block(resp["questions_to_ask"], key=f"q_{uid}")
             else:
                 available = [(n, t, c) for n, t, c in (
                     ("comment", "Comment", "Drop under their post:"),
@@ -262,11 +271,11 @@ def render(snap) -> None:
                             if name == "email":
                                 st.caption(f"Send to: **{ext.get('email', 'unknown')}**")
                                 st.text_input("Subject", value=resp.get("email_subject", ""),
-                                              key=f"subj_{idx}")
-                                copy_block(resp.get("email_body", ""), key=f"eb_{idx}")
+                                              key=f"subj_{uid}")
+                                copy_block(resp.get("email_body", ""), key=f"eb_{uid}")
                             else:
                                 st.caption(caption)
-                                copy_block(resp.get(name, ""), key=f"{name}_{idx}")
+                                copy_block(resp.get(name, ""), key=f"{name}_{uid}")
 
                 objection = resp.get("objection_category")
                 if objection and objection != "none":
@@ -277,10 +286,10 @@ def render(snap) -> None:
                 fields = [f for f in ("comment", "dm", "email_body", "answer", "reply",
                                       "proposal") if (resp.get(f) or "").strip()]
                 if fields:
-                    target = st.selectbox("Which one?", fields, key=f"rvf_{idx}")
-                    ask = st.text_input("What should change?", key=f"rvq_{idx}",
+                    target = st.selectbox("Which one?", fields, key=f"rvf_{uid}")
+                    ask = st.text_input("What should change?", key=f"rvq_{uid}",
                                         placeholder="e.g. shorter, mention their timeline")
-                    if st.button("Revise", key=f"rvb_{idx}") and ask.strip():
+                    if st.button("Revise", key=f"rvb_{uid}") and ask.strip():
                         try:
                             client = build_client()
                             new_text = repair_until_clean(client, {
