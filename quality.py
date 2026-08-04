@@ -228,6 +228,47 @@ def _distinctive(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]{4,}", (text or "").lower()) if w not in _COMMON}
 
 
+# Copy that reads as anonymous advice. Measured across 57 real sent public messages: 5
+# mentioned us at all and NONE signalled that we do this work, which is why the team saw
+# acknowledgement and no inquiries. A public message with no first-person voice is a free
+# consultation credited to nobody.
+_FIRST_PERSON_RE = re.compile(r"\b(i|i'd|i'm|i've|i'll|me|my|we|we'd|we've|our|us)\b", re.I)
+
+# Handing a buyer the criteria for judging candidates is coaching them to interview our
+# competitors. Real example, sent: "Ask any candidate to walk you through a sub-account..."
+_ARMS_THE_BUYER_RE = re.compile(
+    r"\b(ask (any |the |your )?(candidate|candidates|whoever|them|him|her)\b"
+    r"|whoever you (hire|pick|choose|go with)"
+    r"|when (you are |you're )?hiring\b"
+    r"|look for someone who"
+    r"|make sure (they|whoever)"
+    r"|(that|the) (one )?(filter|question|answer) (that )?(matters|sorts|separates)"
+    r"|sorts the \w+ from the)\b",
+    re.I,
+)
+
+
+def find_positioning_gaps(fields: dict) -> list[str]:
+    """Copy that helps them and sells nothing, which is most of what we have sent."""
+    problems = []
+    for name in ("comment", "answer"):
+        text = (fields.get(name) or "").strip()
+        if not text:
+            continue
+        if not _FIRST_PERSON_RE.search(text):
+            problems.append(
+                f"{name} reads as anonymous advice: nothing in it says we do this work, so a "
+                "reader has no idea who to ask"
+            )
+        arms = _ARMS_THE_BUYER_RE.search(text)
+        if arms:
+            problems.append(
+                f'{name} arms them to shop ("{arms.group(0).strip()}"): it hands a buyer the '
+                "criteria for judging our competitors instead of showing we meet them"
+            )
+    return problems
+
+
 def find_generic(fields: dict, source_text: str = "") -> list[str]:
     """Copy that could be pasted under any post, judged against what they actually wrote."""
     problems = []
@@ -508,4 +549,5 @@ def final_check(responses: dict, source_text: str = "",
     fields = repairable_fields(responses)
     return (find_violations(fields, touch)
             + find_fabrications(fields, proof_used)
-            + find_generic(fields, source_text))
+            + find_generic(fields, source_text)
+            + find_positioning_gaps(fields))

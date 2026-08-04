@@ -195,6 +195,12 @@ How to fix each violation type:
     different prospect, so rewrite it completely. Do not reword it slightly. Say the thing
     that is true of THIS prospect's setup instead, using their own words for it. The approved
     client result is the one exception and may stay as it is written.
+  - reads as anonymous advice: rewrite it in the first person, from work you actually do
+    ("when a registration comes back rejected, what I do is..."), so it is obvious this is
+    your trade. One clause is enough. Do not add a pitch, a link, or a request.
+  - arms them to shop: delete the screening question or checklist. Never tell a buyer how to
+    judge candidates. Say the same thing as something you do and maintain yourself, so you are
+    demonstrating the standard rather than handing it to a competitor.
   - template filler: delete the filler phrase and replace it with something true only of
     THIS prospect. "This is a common issue" becomes the actual cause in their setup.
   - could be pasted under any post: rewrite it around the specific thing they described,
@@ -234,6 +240,7 @@ def repair_until_clean(client, responses: dict, schema: dict, max_passes: int = 
 
     current = normalize_responses(responses)
     previous_severity = None
+    previous_signature: tuple = ()
 
     for _ in range(max_passes):
         problems = final_check(current, source_text, normalize_proof_id(current.get("proof_used")))
@@ -244,9 +251,16 @@ def repair_until_clean(client, responses: dict, schema: dict, max_passes: int = 
         # problems alone made the loop quit after one attempt on a stubborn word limit,
         # because trimming 132 -> 126 words leaves the count unchanged while clearly working.
         severity = len(problems) * 1000 + excess_words(repairable_fields(current))
-        if previous_severity is not None and severity >= previous_severity:
+        signature = tuple(sorted(problems))
+        # Stop only when a pass changed nothing at all. Severity alone gave a single attempt
+        # at any problem with no numeric measure, like "reads as anonymous advice" - the model
+        # would rewrite it, still miss, and we would quit. If the copy is genuinely moving we
+        # keep going; if it comes back identical there is nothing to gain from another call.
+        if (previous_severity is not None
+                and severity >= previous_severity
+                and signature == previous_signature):
             break
-        previous_severity = severity
+        previous_severity, previous_signature = severity, signature
 
         current = normalize_responses(repair_copy(client, current, problems, schema))
 
