@@ -66,6 +66,22 @@ CHANNEL_LABELS = {
     "reply": "Thread Reply",
 }
 
+# The label used to be the field name alone, so every DM was recorded as "Facebook DM" even
+# when the lead came from LinkedIn. 45 LinkedIn leads were filed as Facebook, which made
+# "no replies on LinkedIn" a measurement artifact rather than a finding.
+_SOURCE_PREFIX = {"linkedin": "LinkedIn", "facebook": "Facebook"}
+
+
+def channel_label(key: str, source: str = "") -> str:
+    """The channel a message actually went out on, not the field it came from."""
+    label = CHANNEL_LABELS.get(key, key)
+    if key not in ("comment", "dm"):
+        return label
+    for token, name in _SOURCE_PREFIX.items():
+        if token in (source or "").lower():
+            return label.replace("Facebook", name)
+    return label
+
 
 def is_configured() -> bool:
     return bool(supabase_url() and supabase_key())
@@ -204,7 +220,7 @@ def save_prospect(extracted: dict, responses: dict, raw_input: str, mode: str,
     log_rows = [
         {
             "contact_name": extracted.get("name") or "Unknown",
-            "channel": CHANNEL_LABELS.get(key, key),
+            "channel": channel_label(key, source),
             "direction": "draft",
             "content": content,
             "next_step": responses.get("opening_question") or None,
@@ -383,6 +399,10 @@ def mark_bounced(pipeline_id: str) -> None:
 CHANNEL_STATUS = {
     "Facebook Comment": "Comment + DM sent",
     "Facebook DM": "Messaged",
+    # Source-aware labels (channel_label) produce these. Without them mark_message_sent finds
+    # no target status and silently stops advancing the lead.
+    "LinkedIn Comment": "Comment + DM sent",
+    "LinkedIn DM": "Messaged",
     "LinkedIn": "Messaged",
     "Email": "Email sent",
     "Upwork Proposal": "Proposal sent",
