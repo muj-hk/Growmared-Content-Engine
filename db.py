@@ -40,6 +40,10 @@ OUTREACH_STATUSES = [
     "Email sent",
     "Proposal sent",
     "Loom sent — awaiting reply",
+    # The status the whole system exists to produce. Without it a booked call was invisible
+    # until it happened, so nobody could count progress toward a monthly target.
+    "Replied — in conversation",
+    "Call booked",
     "Call completed",
     "Negotiating",
     "Not Interested",
