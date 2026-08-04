@@ -34,7 +34,10 @@ class Snapshot:
 
     @property
     def unsent(self) -> list[dict]:
-        return [m for m in self.messages if not m.get("sent_at")]
+        # Inbound replies (direction="received", written by the Netlify app into this shared
+        # table) have no sent_at. Without this filter they count as drafts waiting to go out.
+        return [m for m in self.messages
+                if not m.get("sent_at") and m.get("direction") != "received"]
 
     @property
     def awaiting(self) -> list[dict]:

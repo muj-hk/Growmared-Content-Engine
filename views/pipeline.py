@@ -39,7 +39,8 @@ def render(snap: Snapshot) -> None:
     as_table = viewc.toggle("Table view", key="pipe_table")
 
     def needs_action(p: dict) -> bool:
-        rows = snap.messages_for(p["id"])
+        # Inbound rows carry no sent_at, so they must not read as work waiting to go out.
+        rows = [m for m in snap.messages_for(p["id"]) if m.get("direction") != "received"]
         return any(not m.get("sent_at") for m in rows) or any(
             m.get("sent_at") and m.get("replied") is None for m in rows)
 
@@ -164,6 +165,16 @@ def render(snap: Snapshot) -> None:
                     continue
 
                 for msg in rows:
+                    # An inbound reply is something they said, not a draft. Render it as
+                    # theirs and never offer to "send" it.
+                    if msg.get("direction") == "received":
+                        st.markdown(
+                            f"**They replied** &nbsp;<span style='color:#6B7280;font-size:0.8rem'>"
+                            f"{msg.get('channel') or ''} · {(msg.get('created_at') or '')[:10]}</span>",
+                            unsafe_allow_html=True)
+                        copy_block(msg.get("content") or "", key=f"in_{msg['id']}")
+                        continue
+
                     sent = bool(msg.get("sent_at"))
                     replied = msg.get("replied")
                     state = "not sent" if not sent else ("replied" if replied else "awaiting reply")

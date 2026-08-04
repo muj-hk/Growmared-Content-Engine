@@ -292,7 +292,11 @@ def email_queue(prospects_rows: list[dict] | None = None,
             .eq("channel", "Email").order("created_at").execute().data or []
         )
     prospects = {p["id"]: p for p in prospects_rows}
-    rows = [r for r in log_rows if r.get("channel") == "Email"]
+    # `direction != received` matters now that the Netlify app writes inbound replies into
+    # this shared table. An inbound row has no sent_at, so without this filter it reads as an
+    # unsent draft and the queue offers to send the prospect their own words back.
+    rows = [r for r in log_rows
+            if r.get("channel") == "Email" and r.get("direction") != "received"]
 
     by_prospect: dict[str, list[dict]] = {}
     for row in rows:
