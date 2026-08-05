@@ -86,7 +86,9 @@ def build_client():
         key = load_api_key("ANTHROPIC_API_KEY")
         if not key:
             raise MissingKeyError("ANTHROPIC_API_KEY is not set in .env.")
-        return anthropic.Anthropic(api_key=key, timeout=120.0, max_retries=2)
+        # max_retries covers the SDK's own backoff; generate_json adds a slower outer retry
+        # on top for the case where a provider blip outlasts it.
+        return anthropic.Anthropic(api_key=key, timeout=120.0, max_retries=4)
 
     from openai import OpenAI
 
@@ -133,16 +135,34 @@ def generate_json(client, system_prompt: str, user_content: str, schema: dict,
     started = time.monotonic()
 
     if PROVIDER == "claude":
-        message = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=8000,  # caps thinking + text together on this model
-            # cache_control: the ~16k-char system prompt is identical across calls, so caching
-            # it cuts its input cost ~90% on every generation after the first in a 5-min window.
-            system=[{"type": "text", "text": system_prompt,
-                     "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": user_content}],
-            output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
-        )
+        # The SDK already retries 5xx and 429, but a short provider blip still surfaced as
+        # "the endpoint is returning server errors" and cost the team the generation. Wrap it
+        # so a transient overload is waited out instead of handed to a person. Only server-side
+        # faults are retried; a bad request or a refusal fails immediately, because retrying
+        # something the model rejected is just a slower way to fail.
+        message = None
+        for attempt in range(3):
+            try:
+                message = client.messages.create(
+                    model=CLAUDE_MODEL,
+                    max_tokens=8000,  # caps thinking + text together on this model
+                    # cache_control: the ~16k-char system prompt is identical across calls, so
+                    # caching cuts its input cost ~90% on every call in a 5-minute window.
+                    system=[{"type": "text", "text": system_prompt,
+                             "cache_control": {"type": "ephemeral"}}],
+                    messages=[{"role": "user", "content": user_content}],
+                    output_config={"effort": effort,
+                                   "format": {"type": "json_schema", "schema": schema}},
+                )
+                break
+            except Exception as exc:
+                name = type(exc).__name__
+                status = getattr(exc, "status_code", 0) or 0
+                transient = status >= 500 or status == 429 or "Overloaded" in name \
+                    or "InternalServer" in name or "APIConnection" in name
+                if not transient or attempt == 2:
+                    raise
+                time.sleep(2 ** attempt * 2)  # 2s, then 4s
         elapsed = time.monotonic() - started
         if message.stop_reason == "refusal":
             raise RefusedError("The model declined to draft this. Check the source text.")
